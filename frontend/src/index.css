@@ -16,4 +16,12 @@ body {
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 3.5vw, 28px);
+  overflow-x: hidden;
+  overflow-y: auto;
 }

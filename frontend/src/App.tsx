@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, useEffect, useState } from 'react'
 import { GestureStage } from './components/GestureStage'
 import './App.css'
 
@@ -6,6 +6,8 @@ type ApiState = 'idle' | 'ok' | 'err'
 
 export default function App() {
   const [api, setApi] = useState<ApiState>('idle')
+  const [chatDraft, setChatDraft] = useState('')
+  const [chatLines, setChatLines] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -23,6 +25,25 @@ export default function App() {
       cancelled = true
     }
   }, [])
+
+  function flushChat() {
+    const text = chatDraft.trim()
+    if (!text) return
+    setChatLines((prev) => [...prev, text])
+    setChatDraft('')
+  }
+
+  function submitChat(ev: FormEvent) {
+    ev.preventDefault()
+    flushChat()
+  }
+
+  function onChatKeyDown(ev: KeyboardEvent<HTMLTextAreaElement>) {
+    if (ev.key !== 'Enter') return
+    if (!(ev.metaKey || ev.ctrlKey)) return
+    ev.preventDefault()
+    flushChat()
+  }
 
   return (
     <div className="app">
@@ -47,6 +68,40 @@ export default function App() {
 
       <main className="app-main">
         <GestureStage />
+
+        <section className="chat-panel" aria-label="文字对话">
+          <div className="chat-label">// DIALOG_STREAM · LOCAL_BUFFER</div>
+          <div className="chat-log" role="log">
+            {chatLines.length === 0 ? (
+              <p className="chat-log-empty">// 尚无消息 · 输入后回车或发送</p>
+            ) : (
+              chatLines.map((line, i) => (
+                <p key={`${i}-${line.slice(0, 24)}`} className="chat-line">
+                  // USER: {line}
+                </p>
+              ))
+            )}
+          </div>
+          <form className="chat-form" onSubmit={submitChat}>
+            <textarea
+              className="chat-input"
+              value={chatDraft}
+              onChange={(e) => setChatDraft(e.target.value)}
+              onKeyDown={onChatKeyDown}
+              placeholder="输入文字…（当前仅保存在本页，可后续对接 /api/chat）"
+              rows={3}
+              maxLength={4000}
+              aria-label="对话输入"
+            />
+            <div className="chat-actions">
+              <span className="chat-hint-inline">Enter 换行 · Cmd/Ctrl+Enter 发送</span>
+              <button type="submit" className="chat-send">
+                // SEND
+              </button>
+            </div>
+          </form>
+        </section>
+
         <aside className="app-hint">
           <p>
             可用 <code>// UPLOAD_LOCAL_AUDIO</code> 上传本地音频；再点击画面启动。
