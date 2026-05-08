@@ -2,6 +2,8 @@
 
 基于**摄像头手势**控制一段循环采样（`sample.wav`）的演示项目：拇食指张合距离映射播放速率（听感上**越快、音高越高**；间距过小则**静音**）。界面是**浅灰底 + 细线 + 等宽字**的数据感风格。
 
+**音频资源**：`frontend/public/sample.wav` **已纳入本 Git 仓库并会推送到 GitHub**，协作者 `git clone` 后即可直接使用；请勿在 `.gitignore` 中排除该文件。若需更换素材，可替换同路径文件并 **commit / push** 更新。
+
 ---
 
 ## 技术栈一览
@@ -38,16 +40,11 @@ cd server && npm install && cd ..
 cd frontend && npm install && cd ..
 ```
 
-### 2. 放入采样文件
+### 2. 采样文件（已随仓库提供）
 
-将 **`sample.wav`** 复制到：
-
-```text
-frontend/public/sample.wav
-```
-
-开发时由 Vite 托管，浏览器从根路径请求： **`http://localhost:5173/sample.wav`**。  
-若无此文件，页面仍可打开，但点击启动音频时会加载失败。
+默认 **`frontend/public/sample.wav`** 已与代码一同提交；克隆后即可用，无需单独下载。  
+开发时由 Vite 托管，浏览器访问 **`http://localhost:5173/sample.wav`** 应能播放该 WAV。  
+若你本地替换了别的 `sample.wav`，请确认仍是浏览器可解码的标准 PCM WAV。
 
 ### 3. 同时启动前端 + 后端（推荐）
 
@@ -92,7 +89,7 @@ music-punch/
 ├── package.json          # 根脚本：concurrently 并行 dev / 触发 frontend build
 ├── frontend/             # React + Vite
 │   ├── public/
-│   │   └── sample.wav    # 需自行放入
+│   │   └── sample.wav    # 随仓库版本管理（GitHub 上可获取）
 │   ├── src/
 │   │   ├── App.tsx       # 顶栏、API 状态、布局
 │   │   ├── components/

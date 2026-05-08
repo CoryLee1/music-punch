@@ -53,7 +53,8 @@ export default function App() {
             <code>playbackRate</code>（越快越高） ，过近静音。
           </p>
           <p className="fine">
-            请将 <code>sample.wav</code> 放在 <code>frontend/public/</code> 。
+            <code>sample.wav</code> 已放在 <code>frontend/public/</code> 并随 GitHub
+            仓库分发；若替换素材请仍使用此路径并提交。
             纯静态原型见 <code>legacy-p5/</code>。
           </p>
         </aside>
