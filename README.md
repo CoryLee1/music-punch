@@ -143,6 +143,11 @@ music-punch/
 
 ---
 
+## Git 提交
+
+- **Cursor**：根目录已配置 `.cursor/rules/auto-git-ship.mdc`，Agent 在完成实质性改动后应自动 `commit` + `push`（除非你明确要求不要推送）。
+- **本机一键**：`npm run ship -- "feat: 说明"`（将把当前所有变更提交并 `git push`；无变更时会直接退出）。消息可省略，默认为 `chore: sync`。
+
 ## 仓库
 
 <https://github.com/CoryLee1/music-punch>

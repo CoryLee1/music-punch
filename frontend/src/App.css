@@ -59,6 +59,56 @@
   gap: 8px;
 }
 
+.gesture-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-size: 11px;
+}
+
+.gesture-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.gesture-upload-btn {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: rgb(28, 28, 30);
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45) inset;
+}
+
+.gesture-upload-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.gesture-upload-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.gesture-clip-label {
+  color: rgba(0, 0, 0, 0.45);
+  max-width: min(420px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .gesture-errors {
   font-size: 11px;
   color: #8b2942;

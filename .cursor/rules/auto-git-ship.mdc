@@ -1,0 +1,16 @@
+---
+description: 实质性代码改动完成后自动 git commit 并 push
+alwaysApply: true
+---
+
+# Git：自动提交与推送（Music Punch）
+
+当本次对话中**对仓库做了实质性修改**（代码、配置、依赖、脚本等）且任务已收敛到可交付状态时，**除非用户明确反对**，须在仓库**根目录**执行：
+
+1. `git status` 查看变更。
+2. 若有待提交内容：`git add -A`。
+3. `git commit -m "<message>"`：信息用**简洁中文或英文**，概括本次改动（如 `feat: …` / `fix: …` / `docs: …`），避免空洞的单个词。
+4. `git push`：推送到当前分支的 **upstream**；若无 upstream 则 `git push -u origin $(git branch --show-current)`；默认远程分支名以仓库为准（常见为 `main`）。
+5. 若无可提交变更或 push 因认证/网络失败，向用户说明原因；**不要**用假成功或丢弃已有 commit。
+
+**不要提交**：用户明说「不要 commit / 别 push」、纯只读问答、或仅有本地实验且用户要求保持工作区脏状态时，跳过上述步骤。

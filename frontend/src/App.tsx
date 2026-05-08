@@ -49,12 +49,11 @@ export default function App() {
         <GestureStage />
         <aside className="app-hint">
           <p>
-            点击画面启动音频 → 摄像头需授权 → 拇食指距离映射{' '}
-            <code>playbackRate</code>（越快越高） ，过近静音。
+            可用 <code>// UPLOAD_LOCAL_AUDIO</code> 上传本地音频；再点击画面启动。
+            摄像头需授权；拇食指距离映射 <code>playbackRate</code>（越快越高），过近静音。
           </p>
           <p className="fine">
-            <code>sample.wav</code> 已放在 <code>frontend/public/</code> 并随 GitHub
-            仓库分发；若替换素材请仍使用此路径并提交。
+            默认内置 <code>sample.wav</code>（随仓库分发）。上传仅保存在本机内存，不会发到服务器。
             纯静态原型见 <code>legacy-p5/</code>。
           </p>
         </aside>

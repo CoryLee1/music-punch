@@ -5,6 +5,8 @@ function readRiffTag(buf: ArrayBuffer): string {
   return String.fromCharCode(u8[0], u8[1], u8[2], u8[3])
 }
 
+const USER_FILE_MAX_BYTES = 40 * 1024 * 1024
+
 /**
  * 用 Tone.Player + 解码后的 AudioBuffer，避免 URL 加载失败时仅报 “Unable to decode audio data”。
  * 会先 fetch 并检查 HTTP 与 RIFF 头，再 decodeAudioData。
@@ -12,6 +14,8 @@ function readRiffTag(buf: ArrayBuffer): string {
 export class SampleLoopController {
   private player: Tone.Player | null = null
   private readonly gain: Tone.Gain
+  /** 用户是否已通过 start() 或其它方式开始过播放（用于上传后决定是否自动续播） */
+  private hasStartedPlayback = false
 
   constructor(private readonly sampleUrl = '/sample.wav') {
     this.gain = new Tone.Gain(0).toDestination()
@@ -66,7 +70,44 @@ export class SampleLoopController {
     if (this.player.state !== 'started') {
       this.player.start(0)
     }
+    this.hasStartedPlayback = true
     this.gain.gain.rampTo(0.5, 0.06)
+  }
+
+  /**
+   * 从用户选择的文件解码并替换当前循环；若已在播放则无缝切换并继续播放。
+   */
+  async loadFromFile(file: File): Promise<void> {
+    await Tone.start()
+    if (file.size > USER_FILE_MAX_BYTES) {
+      throw Error('文件过大，请选择小于 40MB 的音频。')
+    }
+    const raw = await file.arrayBuffer()
+    if (raw.byteLength < 100) {
+      throw Error('文件过小，无法作为音频解码。')
+    }
+    const ctx = Tone.getContext().rawContext
+    let audioBuf: AudioBuffer
+    try {
+      audioBuf = await ctx.decodeAudioData(raw.slice(0))
+    } catch {
+      throw Error(
+        '当前浏览器无法解码此文件。请尝试 WAV、MP3、OGG 等常见格式，或换一段剪辑再试。',
+      )
+    }
+
+    const wasPlaying =
+      this.hasStartedPlayback && this.player?.state === 'started'
+
+    this.player?.stop()
+    this.player?.dispose()
+    this.player = new Tone.Player(audioBuf).connect(this.gain)
+    this.player.loop = true
+
+    if (wasPlaying) {
+      this.player.start(0)
+      this.gain.gain.rampTo(0.5, 0.06)
+    }
   }
 
   applyGesture(
@@ -96,6 +137,7 @@ export class SampleLoopController {
     this.stop()
     this.player?.dispose()
     this.player = null
+    this.hasStartedPlayback = false
     this.gain.dispose()
   }
 }

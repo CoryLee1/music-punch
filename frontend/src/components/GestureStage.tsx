@@ -236,6 +236,7 @@ export function GestureStage() {
   const wrapRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const audioRef = useRef<SampleLoopController | null>(null)
   const rafRef = useRef<number>(0)
@@ -244,6 +245,9 @@ export function GestureStage() {
   const [audioStarted, setAudioStarted] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
   const [sampleError, setSampleError] = useState<string | null>(null)
+  const [uploadErr, setUploadErr] = useState<string | null>(null)
+  const [uploadBusy, setUploadBusy] = useState(false)
+  const [clipLabel, setClipLabel] = useState('内置 · sample.wav')
 
   useEffect(() => {
     audioRef.current = new SampleLoopController()
@@ -412,6 +416,27 @@ export function GestureStage() {
     return () => cancelAnimationFrame(rafRef.current)
   }, [audioStarted, paint])
 
+  const handleFileChange = (list: FileList | null) => {
+    const file = list?.[0]
+    if (!file) return
+    setUploadErr(null)
+    setUploadBusy(true)
+    void (async () => {
+      try {
+        const ctrl = audioRef.current
+        if (!ctrl) return
+        await ctrl.loadFromFile(file)
+        setClipLabel(`本地 · ${file.name}`)
+        if (audioStarted) setSampleError(null)
+      } catch (e) {
+        setUploadErr(e instanceof Error ? e.message : String(e))
+      } finally {
+        setUploadBusy(false)
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    })()
+  }
+
   const onPointerDown = async () => {
     if (audioStarted) return
     try {
@@ -427,12 +452,32 @@ export function GestureStage() {
 
   return (
     <div ref={wrapRef} className="gesture-wrap">
-      {(modelError || sampleError) && (
+      {(modelError || sampleError || uploadErr) && (
         <div className="gesture-errors">
           {modelError && <p>// ERR · VISION: {modelError}</p>}
           {sampleError && <p>// ERR · AUDIO: {sampleError}</p>}
+          {uploadErr && <p>// ERR · UPLOAD: {uploadErr}</p>}
         </div>
       )}
+      <div className="gesture-toolbar">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="gesture-file-input"
+          accept="audio/*,.wav,.mp3,.mpeg,.ogg,.webm,audio/wav"
+          aria-label="选择本地音频文件"
+          onChange={(e) => handleFileChange(e.target.files)}
+        />
+        <button
+          type="button"
+          className="gesture-upload-btn"
+          disabled={uploadBusy}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploadBusy ? '// LOADING…' : '// UPLOAD_LOCAL_AUDIO'}
+        </button>
+        <span className="gesture-clip-label">{clipLabel}</span>
+      </div>
       <div
         className="gesture-canvas-host"
         onPointerDown={() => void onPointerDown()}
