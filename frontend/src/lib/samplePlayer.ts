@@ -12,9 +12,9 @@ const USER_FILE_MAX_BYTES = 40 * 1024 * 1024
 /** 播放中常驻输出增益（与 start()/loadFromFile 后目标一致），手势不再调制 */
 export const PLAYBACK_GAIN = 0.5
 
-/** 默认循环底音（`#` 在 URL 中须编码为 %23） */
+/** 默认循环底音（避免 `#` 在 URL 中被误解析，文件名为 Asharp） */
 export const DEFAULT_LOOP_URL =
-  '/piano-beat-boom-bap-mixed-drums_95bpm_A%23.wav'
+  '/piano-beat-boom-bap-mixed-drums_95bpm_Asharp.wav'
 
 const PUNCH_SFX_URL = '/punch-sound-effect-wet_96bpm.wav'
 /** 出拳采样相对主干的响度（0~1） */
