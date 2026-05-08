@@ -4,12 +4,14 @@
 
 :root {
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  color-scheme: dark;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: #e6e6e4;
+  background: #020203;
+  color: #f6f6f8;
 }
 
 #root {

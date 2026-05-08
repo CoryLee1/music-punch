@@ -17,10 +17,14 @@ const HAND_MODEL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
 
 const PAL = {
-  bg: [230, 229, 227] as const,
-  ink: [28, 28, 30] as const,
-  inkFaint: [160, 158, 154] as const,
-  ghost: [195, 193, 189] as const,
+  /** 近似纯黑底 */
+  bg: [6, 6, 8] as const,
+  /** 主细线 / 文字 */
+  ink: [248, 248, 250] as const,
+  /** 次级注释 */
+  inkFaint: [130, 130, 135] as const,
+  /** 飘字碎片 */
+  ghost: [255, 255, 255] as const,
 }
 
 function mapRange(v: number, a: number, b: number, c: number, d: number) {
@@ -49,19 +53,24 @@ type LM = { x: number; y: number }
 function drawGlitchField(
   ctx: CanvasRenderingContext2D,
   frame: number,
+  w: number,
+  h: number,
 ): void {
   const glyphs = '01/\\[]{}⟨⟩::xx⊹⌁∴Δ'
   ctx.textBaseline = 'alphabetic'
   ctx.font = '9px "IBM Plex Mono", monospace'
   const t = frame * 0.012
+  const cx = w / 2
+  const cy = h / 2
+  const scale = Math.min(w, h)
   for (let i = 0; i < 95; i++) {
     const nx = pseudoNoise(i * 0.17 + t, i * 0.03, 0)
     const ny = pseudoNoise(i * 0.19 + 40, i * 0.07 + t, 1)
     const dx = (nx - 0.5) * 1.15
     const dy = (ny - 0.5) * 0.95
-    const x = W / 2 + dx * Math.min(W, H) * 0.62
-    const y = H / 2 + dy * Math.min(W, H) * 0.52
-    ctx.fillStyle = `rgba(${PAL.ghost[0]}, ${PAL.ghost[1]}, ${PAL.ghost[2]}, ${0.078 + (i % 7) * 0.007})`
+    const x = cx + dx * scale * 0.62
+    const y = cy + dy * scale * 0.52
+    ctx.fillStyle = `rgba(${PAL.ghost[0]}, ${PAL.ghost[1]}, ${PAL.ghost[2]}, ${0.05 + (i % 7) * 0.012})`
     ctx.fillText(glyphs.charAt(i % glyphs.length), x, y)
   }
 }
@@ -72,14 +81,20 @@ function drawSystemHeader(ctx: CanvasRenderingContext2D): void {
   let y = 22
   ctx.fillText('// SYSTEM: MATRIX_VOID · REACT_VITE', 14, y)
   ctx.fillText('// RIPPLE: SAMPLE_RATE_BINDING · TONE_PLAYER', 14, y + 14)
-  ctx.fillText('// VISUAL: GLITCH_BLACK · THIN_STROKE', 14, y + 28)
+  ctx.fillText('// VISUAL: THIN_MONO · BW_REFERENCE', 14, y + 28)
 }
 
-function drawIdleGeometry(ctx: CanvasRenderingContext2D, frame: number): void {
-  const cx = W / 2
-  const cy = H / 2
-  const r = 88 + Math.sin(frame * 0.02) * 4
-  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.35)`
+function drawIdleGeometry(
+  ctx: CanvasRenderingContext2D,
+  frame: number,
+  w: number,
+  h: number,
+): void {
+  const cx = w / 2
+  const cy = h / 2
+  const baseR = (88 * Math.min(w, h)) / 480
+  const r = baseR + Math.sin(frame * 0.02) * 4
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.42)`
   ctx.lineWidth = 0.6
   ctx.setLineDash([3, 7])
   ctx.beginPath()
@@ -94,9 +109,13 @@ function drawIdleGeometry(ctx: CanvasRenderingContext2D, frame: number): void {
   }
 }
 
-function drawStartPrompt(ctx: CanvasRenderingContext2D): void {
-  const cx = W / 2
-  const cy = H / 2
+function drawStartPrompt(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  _h: number,
+): void {
+  const cx = w / 2
+  const cy = _h / 2
   ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.9)`
   ctx.lineWidth = 0.75
   ctx.strokeRect(cx - 148, cy - 26, 296, 52)
@@ -202,7 +221,7 @@ function drawDataHUD(
   ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.4)`
   ctx.lineWidth = 0.5
   ctx.beginPath()
-  ctx.moveTo(W / 2, H / 2)
+  ctx.moveTo(w / 2, h / 2)
   ctx.lineTo(cx, cy)
   ctx.stroke()
 
@@ -213,7 +232,7 @@ function drawDataHUD(
   ctx.fillText(
     `RATE // VOL  ${nf(playbackRate, 1, 2)}  ·  ${nf(volume, 1, 2)}`,
     14,
-    H - 38,
+    h - 38,
   )
 
   ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.55)`
@@ -226,10 +245,10 @@ function drawDataHUD(
   ctx.fillText(`AMPLITUDE     ${nf(volume, 1, 2)}`, 18, 120)
 }
 
-function drawSignalNull(ctx: CanvasRenderingContext2D): void {
+function drawSignalNull(ctx: CanvasRenderingContext2D, h: number): void {
   ctx.font = '10px "IBM Plex Mono", monospace'
   ctx.fillStyle = `rgb(${PAL.inkFaint[0]}, ${PAL.inkFaint[1]}, ${PAL.inkFaint[2]})`
-  ctx.fillText('// SIGNAL: NULL · NO_HAND', 14, H - 18)
+  ctx.fillText('// SIGNAL: NULL · NO_HAND', 14, h - 18)
 }
 
 export function GestureStage() {
@@ -340,18 +359,18 @@ export function GestureStage() {
       ctx.fillStyle = `rgb(${PAL.bg[0]}, ${PAL.bg[1]}, ${PAL.bg[2]})`
       ctx.fillRect(0, 0, w, h)
 
-      ctx.filter = 'sepia(0.08) saturate(0.85) brightness(1.02)'
+      ctx.filter = 'grayscale(1) contrast(1.2) brightness(0.38)'
       ctx.drawImage(video, 0, 0, w, h)
       ctx.filter = 'none'
 
-      ctx.fillStyle = 'rgba(234, 233, 231, 0.55)'
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.58)'
       ctx.fillRect(0, 0, w, h)
 
       const fr = frameRef.current++
-      drawGlitchField(ctx, fr)
+      drawGlitchField(ctx, fr, w, h)
       drawSystemHeader(ctx)
-      drawIdleGeometry(ctx, fr)
-      if (!audioOn) drawStartPrompt(ctx)
+      drawIdleGeometry(ctx, fr, w, h)
+      if (!audioOn) drawStartPrompt(ctx, w, h)
 
       const hands = result?.landmarks ?? []
 
@@ -389,7 +408,7 @@ export function GestureStage() {
         if (audioRef.current && audioOn) {
           audioRef.current.applyGesture(undefined, 0)
         }
-        drawSignalNull(ctx)
+        drawSignalNull(ctx, h)
       }
     },
     [],

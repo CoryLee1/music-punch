@@ -2,7 +2,7 @@
   max-width: 900px;
   margin: 0 auto;
   padding: 20px 18px 48px;
-  color: rgb(28, 28, 30);
+  color: rgba(246, 246, 248, 0.94);
 }
 
 .app-bar {
@@ -13,7 +13,7 @@
   gap: 12px 24px;
   margin-bottom: 18px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .app-bar-title {
@@ -23,13 +23,13 @@
 }
 
 .app-bar-title .mark {
-  color: rgba(0, 0, 0, 0.38);
+  color: rgba(255, 255, 255, 0.38);
   margin-right: 6px;
 }
 
 .app-bar-meta {
   font-size: 11px;
-  color: rgba(0, 0, 0, 0.52);
+  color: rgba(255, 255, 255, 0.5);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -37,14 +37,15 @@
 }
 
 .app-bar-meta .sub {
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 .app-bar-meta code {
   font-size: 10px;
   padding: 1px 5px;
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .app-main {
@@ -85,24 +86,24 @@
   letter-spacing: 0.02em;
   padding: 6px 12px;
   cursor: pointer;
-  color: rgb(28, 28, 30);
+  color: rgba(246, 246, 248, 0.95);
   background: transparent;
-  border: 1px solid rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45) inset;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset;
 }
 
 .gesture-upload-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .gesture-upload-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .gesture-clip-label {
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.42);
   max-width: min(420px, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -111,7 +112,7 @@
 
 .gesture-errors {
   font-size: 11px;
-  color: #8b2942;
+  color: #ff6b7a;
   line-height: 1.5;
 }
 
@@ -122,14 +123,14 @@
 .gesture-canvas-host {
   position: relative;
   width: fit-content;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55) inset;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6) inset;
   cursor: pointer;
   border-radius: 2px;
 }
 
 .gesture-canvas-host:focus {
-  outline: 1px solid rgba(0, 0, 0, 0.35);
+  outline: 1px solid rgba(255, 255, 255, 0.45);
   outline-offset: 2px;
 }
 
@@ -149,7 +150,7 @@
 .app-hint {
   font-size: 11px;
   line-height: 1.55;
-  color: rgba(0, 0, 0, 0.48);
+  color: rgba(255, 255, 255, 0.46);
 }
 
 .app-hint p {
@@ -163,11 +164,12 @@
 .app-hint code {
   font-size: 10px;
   padding: 1px 4px;
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.07);
   border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .app-hint .fine {
   font-size: 10px;
-  opacity: 0.9;
+  opacity: 0.88;
 }
