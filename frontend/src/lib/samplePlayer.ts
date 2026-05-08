@@ -9,8 +9,8 @@ function readRiffTag(buf: ArrayBuffer): string {
 
 const USER_FILE_MAX_BYTES = 40 * 1024 * 1024
 
-/** 手势映射的线性音量下限：拇食指最近时仍保留少量响度（无手传 0 时仍可完全静音） */
-export const GESTURE_VOLUME_LINEAR_MIN = 0.14
+/** 播放中常驻输出增益（与 start()/loadFromFile 后目标一致），手势不再调制 */
+export const PLAYBACK_GAIN = 0.5
 
 /**
  * 用 Tone.Player + 解码后的 AudioBuffer，避免 URL 加载失败时仅报 “Unable to decode audio data”。
@@ -80,7 +80,7 @@ export class SampleLoopController {
       this.player.start(0)
     }
     this.hasStartedPlayback = true
-    this.gain.gain.rampTo(0.5, 0.06)
+    this.gain.gain.rampTo(PLAYBACK_GAIN, 0.06)
   }
 
   /**
@@ -115,12 +115,12 @@ export class SampleLoopController {
 
     if (wasPlaying) {
       this.player.start(0)
-      this.gain.gain.rampTo(0.5, 0.06)
+      this.gain.gain.rampTo(PLAYBACK_GAIN, 0.06)
     }
   }
 
   /**
-   * 手势识别命中时调用：在一段时间内抬升/压低 playbackRate 与音量，与捏合并行。
+   * 手势命中时短时调制 playbackRate（不再调制音量）。
    */
   triggerGestureFx(signal: GestureSignal): void {
     if (signal === 'grab') return
@@ -130,20 +130,16 @@ export class SampleLoopController {
   }
 
   /**
-   * @param palmSpreadMul 手掌张开度推导的倍率（约 0.72～1.32）：拢手偏低音、张开偏高音；与 pinch 的 playbackRate 相乘。
+   * 捏合/手掌只调制 playbackRate；输出音量固定为 {@link PLAYBACK_GAIN}。
+   * @param palmSpreadMul 手掌张开度倍率，与 pinch rate 相乘
    */
   applyGesture(
     playbackRate: number | undefined,
-    volumeLinear: number | undefined,
     palmSpreadMul?: number,
   ): void {
     let r =
       playbackRate != null
         ? Math.min(2, Math.max(0.5, playbackRate))
-        : null
-    let v =
-      volumeLinear != null
-        ? Math.min(1, Math.max(0, volumeLinear))
         : null
 
     if (r != null && palmSpreadMul != null) {
@@ -160,7 +156,6 @@ export class SampleLoopController {
     if (
       this.fxSignal !== null &&
       r != null &&
-      v != null &&
       now < this.fxEndPerf
     ) {
       const phase = Math.max(
@@ -172,30 +167,19 @@ export class SampleLoopController {
       if (this.fxSignal === 'punch') {
         const peakR = Math.min(2.55, r + 1.05)
         r = r + (peakR - r) * punchCurve
-        v = Math.min(1, v + 0.48 * punchCurve)
       } else {
         const chopCurve = Math.sin(phase * Math.PI) * phase
         r = Math.min(
           2.45,
           r + 0.5 * chopCurve + 0.09 * Math.sin(phase * Math.PI * 5) * phase,
         )
-        v = Math.min(1, v + 0.3 * chopCurve)
       }
     }
 
     if (this.player && r != null) {
       this.player.playbackRate = r
     }
-    if (v != null) {
-      const noHandSilence =
-        playbackRate == null &&
-        volumeLinear !== undefined &&
-        volumeLinear <= 0
-      const outV = noHandSilence
-        ? 0
-        : Math.max(GESTURE_VOLUME_LINEAR_MIN, Math.min(1, v))
-      this.gain.gain.rampTo(outV, 0.05)
-    }
+    this.gain.gain.rampTo(PLAYBACK_GAIN, 0.05)
   }
 
   stop(): void {

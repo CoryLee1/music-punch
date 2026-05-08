@@ -12,7 +12,7 @@ import {
   type GestureHit,
 } from '../lib/handGestures'
 import {
-  GESTURE_VOLUME_LINEAR_MIN,
+  PLAYBACK_GAIN,
   SampleLoopController,
 } from '../lib/samplePlayer'
 
@@ -238,7 +238,6 @@ function drawDataHUD(
   indexFinger: LM,
   radius: number,
   playbackRate: number,
-  volume: number,
   palmOpen: number,
   palmMul: number,
   w: number,
@@ -281,7 +280,11 @@ function drawDataHUD(
     18,
     118,
   )
-  ctx.fillText(`AMPLITUDE     ${nf(volume, 1, 2)}`, 18, 132)
+  ctx.fillText(
+    `GAIN · ${PLAYBACK_GAIN}  (常驻，手势不调音量)`,
+    18,
+    132,
+  )
 }
 
 function drawSignalNull(ctx: CanvasRenderingContext2D, h: number): void {
@@ -439,9 +442,6 @@ export function GestureStage() {
           const maxR = 220
           let playbackRate = mapRange(radius, minR, maxR, 0.5, 2.0)
           playbackRate = constrain(playbackRate, 0.5, 2.0)
-          const activationThreshold = 25
-          const volume =
-            radius > activationThreshold ? 0.6 : GESTURE_VOLUME_LINEAR_MIN
 
           const oRaw = openness(primary)
           palmOpenSmoothRef.current =
@@ -467,14 +467,13 @@ export function GestureStage() {
             }
           }
 
-          audioRef.current.applyGesture(playbackRate, volume, palmMul)
+          audioRef.current.applyGesture(playbackRate, palmMul)
           drawDataHUD(
             ctx,
             thumb,
             indexFinger,
             radius,
             playbackRate,
-            volume,
             palmOpenSmoothRef.current,
             palmMul,
             w,
@@ -485,7 +484,7 @@ export function GestureStage() {
         gestureDetectorRef.current.reset()
         palmOpenSmoothRef.current = 0.155
         if (audioRef.current && audioOn) {
-          audioRef.current.applyGesture(undefined, 0)
+          audioRef.current.applyGesture(undefined)
         }
         drawSignalNull(ctx, h)
       }

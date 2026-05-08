@@ -105,7 +105,7 @@ export default function App() {
         <aside className="app-hint">
           <p>
             可用 <code>// UPLOAD_LOCAL_AUDIO</code> 上传本地音频；再点击画面启动。
-            摄像头需授权；拇食指距离映射 <code>playbackRate</code>（越快越高），过近静音。
+            摄像头需授权；拇食指距离只映射 <code>playbackRate</code>（越快越高），音量固定常驻。
           </p>
           <p>
             手势识别（先点击画布启动音画流）：五指张开再收拢 → <code>抓</code>（仅界面标记；音高由手掌开合连续控制）。
