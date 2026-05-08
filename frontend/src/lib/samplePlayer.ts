@@ -9,6 +9,9 @@ function readRiffTag(buf: ArrayBuffer): string {
 
 const USER_FILE_MAX_BYTES = 40 * 1024 * 1024
 
+/** 手势映射的线性音量下限：拇食指最近时仍保留少量响度（无手传 0 时仍可完全静音） */
+export const GESTURE_VOLUME_LINEAR_MIN = 0.14
+
 /**
  * 用 Tone.Player + 解码后的 AudioBuffer，避免 URL 加载失败时仅报 “Unable to decode audio data”。
  * 会先 fetch 并检查 HTTP 与 RIFF 头，再 decodeAudioData。
@@ -184,7 +187,14 @@ export class SampleLoopController {
       this.player.playbackRate = r
     }
     if (v != null) {
-      this.gain.gain.rampTo(v, 0.05)
+      const noHandSilence =
+        playbackRate == null &&
+        volumeLinear !== undefined &&
+        volumeLinear <= 0
+      const outV = noHandSilence
+        ? 0
+        : Math.max(GESTURE_VOLUME_LINEAR_MIN, Math.min(1, v))
+      this.gain.gain.rampTo(outV, 0.05)
     }
   }
 

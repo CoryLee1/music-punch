@@ -11,7 +11,10 @@ import {
   pickPrimaryHand,
   type GestureHit,
 } from '../lib/handGestures'
-import { SampleLoopController } from '../lib/samplePlayer'
+import {
+  GESTURE_VOLUME_LINEAR_MIN,
+  SampleLoopController,
+} from '../lib/samplePlayer'
 
 const W = 640
 const H = 480
@@ -437,7 +440,8 @@ export function GestureStage() {
           let playbackRate = mapRange(radius, minR, maxR, 0.5, 2.0)
           playbackRate = constrain(playbackRate, 0.5, 2.0)
           const activationThreshold = 25
-          const volume = radius > activationThreshold ? 0.6 : 0
+          const volume =
+            radius > activationThreshold ? 0.6 : GESTURE_VOLUME_LINEAR_MIN
 
           const oRaw = openness(primary)
           palmOpenSmoothRef.current =
