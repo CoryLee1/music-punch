@@ -1,0 +1,251 @@
+.app {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+  color: #e8ecff;
+}
+
+.hero {
+  margin-bottom: 2rem;
+}
+
+.hero h1 {
+  font-size: clamp(1.75rem, 4vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
+  background: linear-gradient(120deg, #9de3ff, #c7b4ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.tagline {
+  margin: 0;
+  max-width: 52rem;
+  line-height: 1.6;
+  color: #9aa3c9;
+  font-size: 0.98rem;
+}
+
+.tagline code {
+  font-size: 0.85em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.panel {
+  background: rgba(18, 20, 40, 0.72);
+  border: 1px solid rgba(120, 140, 255, 0.12);
+  border-radius: 16px;
+  padding: 1.25rem 1.35rem 1.5rem;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+}
+
+.panel.stretch {
+  min-height: 100%;
+}
+
+.panel h2 {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #c5ceff;
+}
+
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 120px;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(6, 8, 22, 0.85);
+  color: #f4f6ff;
+  font: inherit;
+  line-height: 1.5;
+}
+
+.textarea:focus {
+  outline: 2px solid rgba(125, 180, 255, 0.45);
+  outline-offset: 1px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.btn {
+  cursor: pointer;
+  border: none;
+  border-radius: 999px;
+  padding: 0.55rem 1.15rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: transform 0.12s ease, filter 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, #5f8dff, #9c6dff);
+  color: #fff;
+}
+
+.btn.accent {
+  background: linear-gradient(135deg, #38c9b6, #6d8bff);
+  color: #071018;
+}
+
+.btn.ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #dbe2ff;
+}
+
+.btn:not(:disabled):hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.error {
+  margin-top: 0.75rem;
+  color: #ff9db4;
+  font-size: 0.9rem;
+}
+
+.result {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.65rem;
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(120, 170, 255, 0.2);
+  color: #dbe8ff;
+}
+
+.pill.subtle {
+  background: rgba(255, 255, 255, 0.06);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.summary {
+  margin: 0 0 0.75rem;
+  line-height: 1.55;
+  color: #b8c2ee;
+  font-size: 0.95rem;
+}
+
+.stats {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 0.75rem;
+  font-size: 0.88rem;
+  color: #8c98c9;
+}
+
+.stats strong {
+  color: #e3e8ff;
+  font-weight: 600;
+}
+
+.chords {
+  margin: 0 0 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  color: #c8d4ff;
+}
+
+.hand-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.hand-video-wrap {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #05060f;
+  aspect-ratio: 4 / 3;
+  max-height: 360px;
+}
+
+.hand-video,
+.hand-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.hand-video {
+  opacity: 0.001;
+  pointer-events: none;
+}
+
+.hand-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #8b95bf;
+}
+
+.fineprint {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: #6c7699;
+  line-height: 1.45;
+}
+
+.fineprint code {
+  font-size: 0.9em;
+  padding: 0.08rem 0.3rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}

@@ -1,0 +1,28 @@
+:root {
+  font-family: 'DM Sans', 'PingFang SC', 'Hiragino Sans GB', system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 20% 0%, rgba(80, 120, 255, 0.22), transparent),
+    radial-gradient(900px 500px at 90% 20%, rgba(180, 90, 255, 0.18), transparent),
+    #080914;
+}
+
+#root {
+  min-height: 100vh;
+}
