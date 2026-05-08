@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { GestureStage } from './components/GestureStage'
 import { ControlPanel } from './components/ControlPanel'
 import { EmotionInput } from './components/EmotionInput'
@@ -8,6 +9,115 @@ import type { GestureHit } from './lib/handGestures'
 import './App.css'
 
 const LOADING_DURATION = 2500 // ms，模拟 loading
+
+/* ───── 深色背景动态字符 ───── */
+const BG_GLYPHS = '○◎□⊠×+✦·—/⊕◇⊹∴Δ⟨⟩■▪▫◆◈⬡⬢▲▽⊗⊙≡≈∞∅∂∇⌘⌥⏎⏏⎔⎕⌭◌△▷◁▹◃⊿⋮⋯'
+
+function bgNoise(i: number, j: number, t: number) {
+  return (Math.sin(i * 12.9898 + j * 78.233 + t * 2.399) * 43758.5453) % 1
+}
+
+function DarkBgCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const rafRef = useRef(0)
+  const frameRef = useRef(0)
+
+  useEffect(() => {
+    const draw = () => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      const dpr = window.devicePixelRatio || 1
+      const w = window.innerWidth
+      const h = window.innerHeight
+      canvas.width = w * dpr
+      canvas.height = h * dpr
+      ctx.scale(dpr, dpr)
+
+      // 清除
+      ctx.clearRect(0, 0, w, h)
+
+      const fr = frameRef.current++
+      const t = fr * 0.003
+
+      // 1. 漂浮字符
+      ctx.font = '11px "Space Mono", monospace'
+      ctx.textBaseline = 'alphabetic'
+      for (let i = 0; i < 80; i++) {
+        const nx = Math.abs(bgNoise(i * 0.13 + t, i * 0.07, 0))
+        const ny = Math.abs(bgNoise(i * 0.11 + 50, i * 0.09 + t, 1))
+        const alpha = 0.03 + (i % 7) * 0.005
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+        ctx.fillText(BG_GLYPHS.charAt(i % BG_GLYPHS.length), nx * w, ny * h)
+      }
+
+      // 2. 微弱网格
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.015)'
+      ctx.lineWidth = 0.5
+      const gridSize = 80
+      for (let x = gridSize; x < w; x += gridSize) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
+      }
+      for (let y = gridSize; y < h; y += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
+      }
+
+      // 3. 缓慢移动的扫描线
+      const scanY = (fr * 0.3) % (h + 60) - 30
+      const scanGrad = ctx.createLinearGradient(0, scanY - 30, 0, scanY + 30)
+      scanGrad.addColorStop(0, 'rgba(255, 255, 255, 0)')
+      scanGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.012)')
+      scanGrad.addColorStop(1, 'rgba(255, 255, 255, 0)')
+      ctx.fillStyle = scanGrad
+      ctx.fillRect(0, scanY - 30, w, 60)
+
+      // 4. 角落标记
+      ctx.font = '8px "Space Mono", monospace'
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.04)'
+      ctx.textBaseline = 'top'
+      ctx.fillText('MUSICPUNCH_SYS v1.0', 16, 16)
+      ctx.fillText(`FR:${fr}`, 16, 28)
+
+      ctx.textAlign = 'right'
+      ctx.fillText('GESTURAL_INTERFACE', w - 16, 16)
+      ctx.textAlign = 'left'
+
+      ctx.textBaseline = 'bottom'
+      ctx.fillText('// MULTIMODAL AUDIO-VISUAL ENGINE', 16, h - 16)
+
+      ctx.textAlign = 'right'
+      const blinkOn = Math.floor(fr / 40) % 2 === 0
+      if (blinkOn) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'
+        ctx.fillText('● ACTIVE', w - 16, h - 16)
+      }
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'alphabetic'
+
+      rafRef.current = requestAnimationFrame(draw)
+    }
+
+    rafRef.current = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [])
+
+  return createPortal(
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100vw',
+        height: '100vh',
+        zIndex: 0,
+        pointerEvents: 'none',
+      }}
+    />,
+    document.body,
+  )
+}
 
 export default function App() {
   /* ───── 全局状态 ───── */
@@ -184,12 +294,6 @@ export default function App() {
     }
   }, [addError])
 
-  /* ───── 停止音频 ───── */
-  const handleStopAudio = useCallback(() => {
-    audioRef.current?.stop()
-    setAudioStarted(false)
-  }, [])
-
   /* ───── 暂停/继续 ───── */
   const handleTogglePause = useCallback(() => {
     setIsPaused((p) => !p)
@@ -212,6 +316,9 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* 深色背景动态字符 */}
+      <DarkBgCanvas />
+
       {/* 错误提示 */}
       {errors.length > 0 && (
         <div className="app-errors">
@@ -254,15 +361,15 @@ export default function App() {
           gestureBanner={gestureBanner}
           clipLabel={clipLabel}
           audioStarted={audioStarted}
-          onAudioUpload={handleAudioUpload}
-          onStopAudio={handleStopAudio}
         />
       </div>
 
       {/* 底部输入栏 */}
       <EmotionInput
         disabled={inputDisabled}
+        phase={phase}
         onSubmit={handleEmotionSubmit}
+        onReset={handleReset}
       />
     </div>
   )

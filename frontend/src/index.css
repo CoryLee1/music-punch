@@ -6,9 +6,9 @@
 
 :root {
   font-family: 'Space Mono', 'IBM Plex Mono', ui-monospace, monospace;
-  --bg-primary: #d1d1d1;
-  --bg-secondary: #d1d1d1;
-  --bg-tertiary: #c4c4c4;
+  --bg-primary: #f0f0f0;
+  --bg-secondary: #e8e8e8;
+  --bg-tertiary: #dbdbdb;
   --border-color: rgba(0, 0, 0, 0.08);
   --border-light: rgba(0, 0, 0, 0.12);
   --text-primary: rgba(0, 0, 0, 0.85);
@@ -43,6 +43,7 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   border: 1.5px solid rgba(255, 255, 255, 0.08);
   position: relative;
+  z-index: 1;
 }
 
 ::selection {

@@ -147,7 +147,7 @@
   75% { content: '...'; }
 }
 
-/* --- 右侧控制面板 · 浅白色平面 --- */
+/* --- 右侧控制面板 · 三分区 --- */
 .app-panel {
   flex: 0 0 280px;
   width: 280px;
@@ -155,27 +155,65 @@
   flex-direction: column;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-color);
-  overflow-y: auto;
+  overflow: hidden;
 }
 
-/* 面板头部 */
-.panel-header {
-  padding: 10px 14px;
+/* 分区通用 */
+.panel-zone {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-bottom: 1px solid var(--border-color);
+}
+
+.panel-zone:last-child {
+  border-bottom: none;
+}
+
+/* 区域 1：动作区 — 占最多空间（摄像头+手势图） */
+.zone-gesture {
+  flex: 5;
+  min-height: 200px;
+}
+
+/* 区域 2：音乐区 */
+.zone-audio {
+  flex: 2.5;
+  min-height: 0;
+}
+
+/* 区域 3：计时区 */
+.zone-timer {
+  flex: 2.5;
+  min-height: 0;
+}
+
+/* 区域头部 */
+.zone-header {
+  padding: 6px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
-.panel-title {
-  font-size: 10px;
+.zone-title {
+  font-size: 9px;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.zone-status {
+  font-size: 8px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
 }
 
 .panel-status {
-  font-size: 9px;
+  font-size: 8px;
   color: var(--text-muted);
   letter-spacing: 0.1em;
 }
@@ -187,23 +225,27 @@
 /* 摄像头预览 + HUD */
 .panel-camera {
   position: relative;
-  width: calc(100% - 24px);
-  margin: 10px auto;
+  width: calc(100% - 20px);
+  margin: 6px auto;
   aspect-ratio: 16 / 9;
   background: #2a2a2a;
   border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 4px;
   overflow: hidden;
   flex-shrink: 0;
+  min-height: 90px;
 }
 
 .panel-camera video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1);
   opacity: 0.85;
   filter: grayscale(1) contrast(1.1);
+  display: block;
 }
 
 /* HUD 叠加 canvas */
@@ -233,62 +275,56 @@
   text-transform: uppercase;
 }
 
-/* 手势映射卡片 */
-.panel-gesture-map {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-color);
+/* 雷达手势轮播 */
+/* 双手势像素图 */
+.panel-gesture-duo {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  flex-direction: column;
   gap: 6px;
+  padding: 6px 10px;
 }
 
-.gesture-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.03);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  transition: background 0.15s ease;
-}
-
-.gesture-card:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-.gesture-card svg {
-  flex-shrink: 0;
-}
-
-.gesture-card-info {
+.gesture-line-card {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  background: #c8c8c8;
+  border-radius: 4px;
+  overflow: hidden;
   min-width: 0;
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-.gesture-card-name {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: rgba(0, 140, 160, 0.85);
+.gesture-line-canvas {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: block;
+  image-rendering: pixelated;
 }
 
-.gesture-card-desc {
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
+.gesture-line-label {
+  width: 100%;
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  color: rgba(0, 0, 0, 0.5);
+  text-transform: uppercase;
+  text-align: center;
+  flex-shrink: 0;
+  padding: 3px 0;
+  background: #c8c8c8;
+  font-family: 'Space Mono', monospace;
 }
 
 /* 手势事件横幅 */
 .panel-gesture-banner {
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 4px 14px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: rgba(0, 160, 184, 0.05);
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .gesture-banner-label {
@@ -308,11 +344,12 @@
 
 /* 音频控制区 */
 .panel-audio-controls {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 6px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
 }
 
 .audio-label {
@@ -328,25 +365,16 @@
 /* 波形可视化区域 */
 .panel-visualizer {
   flex: 1;
-  min-height: 60px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-color);
+  min-height: 0;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.visualizer-label {
-  font-size: 8px;
-  letter-spacing: 0.15em;
-  color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 .visualizer-canvas {
   flex: 1;
   width: 100%;
-  min-height: 50px;
+  min-height: 0;
 }
 
 .visualizer-canvas canvas {
@@ -357,11 +385,11 @@
 
 /* 控制按钮区域 */
 .panel-controls {
-  padding: 10px 14px;
+  padding: 4px 14px 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  border-bottom: 1px solid var(--border-color);
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .control-row {
@@ -373,33 +401,34 @@
 .control-btn {
   flex: 1;
   padding: 8px 10px;
-  background: transparent;
-  border: 1px solid var(--border-light);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  color: rgba(0, 0, 0, 0.75);
   font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
   transition: all 0.15s ease;
   font-family: inherit;
+  border-radius: 3px;
 }
 
 .control-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(0, 0, 0, 0.18);
 }
 
 .control-btn:active {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .control-btn:disabled {
-  opacity: 0.3;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .control-btn.primary {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .control-btn.danger {
@@ -413,24 +442,19 @@
   color: rgba(180, 40, 40, 1);
 }
 
-/* 倒计时 */
+/* 计时 */
 .panel-timer {
-  padding: 12px 14px;
+  flex: 1;
+  min-height: 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.timer-label {
-  font-size: 8px;
-  letter-spacing: 0.15em;
-  color: var(--text-muted);
-  text-transform: uppercase;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 14px;
 }
 
 .timer-display {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 32px;
+  font-weight: 400;
   letter-spacing: 0.04em;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -447,31 +471,6 @@
 }
 
 
-/* 信息条 */
-.panel-info {
-  padding: 10px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: 8px;
-  letter-spacing: 0.08em;
-}
-
-.info-key {
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.info-val {
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
 
 /* ========== 底部情绪输入区 ========== */
 .app-input-bar {
@@ -515,27 +514,51 @@
 }
 
 .input-submit {
-  padding: 8px 20px;
-  background: transparent;
-  border: 1px solid var(--border-light);
-  color: var(--text-primary);
-  font-size: 10px;
+  padding: 9px 22px;
+  background: #ff864a;
+  border: 1px solid rgba(220, 110, 55, 0.6);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
   font-family: inherit;
+  box-shadow: 0 2px 8px rgba(255, 134, 74, 0.4);
 }
 
 .input-submit:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.25);
+  background: #f0743a;
+  border-color: rgba(200, 95, 45, 0.8);
+  box-shadow: 0 3px 12px rgba(255, 134, 74, 0.55);
 }
 
 .input-submit:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.input-restart {
+  padding: 9px 18px;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+  margin-right: 6px;
+}
+
+.input-restart:hover {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(0, 0, 0, 0.25);
+  color: var(--text-primary);
 }
 
 /* ========== 系统错误提示 ========== */

@@ -57,7 +57,7 @@ type LM = { x: number; y: number }
 
 /** 绘制浅色背景 + 网格 */
 function drawBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  ctx.fillStyle = '#d1d1d1'
+  ctx.fillStyle = '#f0f0f0'
   ctx.fillRect(0, 0, w, h)
 
   ctx.strokeStyle = `rgba(${B}, ${GRID_ALPHA})`
@@ -81,6 +81,81 @@ function drawFloatingGlyphs(ctx: CanvasRenderingContext2D, w: number, h: number,
     const ny = Math.abs(pseudoNoise(i * 0.19 + 40, i * 0.07 + t, 1))
     ctx.fillStyle = `rgba(${B}, ${0.06 + (i % 5) * 0.018})`
     ctx.fillText(GLYPHS.charAt(i % GLYPHS.length), nx * w, ny * h)
+  }
+}
+
+/**
+ * 8×10 粗体点阵字形（匹配参考图风格）
+ * 每行 8 bit，MSB = 左列；笔画 2-dot 宽
+ *
+ * P  .#####..   O  .#####..   U  ##...##.   N  ##...##.
+ *    ##...##.      ##...##.      ##...##.      ###..##.
+ *    ##...##.      ##...##.      ##...##.      ####.##.
+ *    ##...##.      ##...##.      ##...##.      ##.####.
+ *    ######..      ##...##.      ##...##.      ##..###.
+ *    ##......      ##...##.      ##...##.      ##...##.
+ *    ##......      ##...##.      ##...##.      ##...##.
+ *    ##......      ##...##.      ##...##.      ##...##.
+ *    ##......      ##...##.      .######.      ##...##.
+ *    ##......      .#####..      ..####..      ##...##.
+ */
+const DOT_FONT: Record<string, number[]> = {
+  P: [0x7C,0xC6,0xC6,0xC6,0xFC,0xC0,0xC0,0xC0,0xC0,0xC0],
+  O: [0x7C,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0x7C],
+  U: [0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0x7E,0x3C],
+  N: [0xC6,0xE6,0xF6,0xDE,0xCE,0xC6,0xC6,0xC6,0xC6,0xC6],
+  C: [0x7C,0xC6,0xC0,0xC0,0xC0,0xC0,0xC0,0xC0,0xC6,0x7C],
+  H: [0xC6,0xC6,0xC6,0xC6,0xFE,0xC6,0xC6,0xC6,0xC6,0xC6],
+  ' ': [0,0,0,0,0,0,0,0,0,0],
+}
+
+/** 绘制点阵风格 "POP PUNCH" 待机水印（匹配参考图方形点阵） */
+function drawDotMatrixTitle(ctx: CanvasRenderingContext2D, w: number, h: number, _frame: number) {
+  const lines = ['POP', 'PUNCH']
+  const CHAR_W = 8       // 每个字符宽（dot 格）
+  const CHAR_H = 10      // 每个字符高（dot 格）
+  const CHAR_GAP = 2     // 字符间距（dot 格）
+  const LINE_GAP = 3     // 行间距（dot 格）
+
+  // 以最宽行（PUNCH = 5字）自适应方块大小，占画布 ~55% 宽
+  const maxLineChars = Math.max(...lines.map(l => l.length))
+  const totalGridW = maxLineChars * CHAR_W + (maxLineChars - 1) * CHAR_GAP
+  const DOT = Math.max(3, Math.floor(w * 0.52 / totalGridW))
+  const GAP = Math.max(1, Math.round(DOT * 0.32))
+  const STEP = DOT + GAP
+
+  const totalH = lines.length * CHAR_H * STEP + (lines.length - 1) * LINE_GAP * STEP
+  const startY = (h - totalH) / 2
+
+  // 很浅的品牌色 + 微弱呼吸
+  const alpha = 0.09 + Math.sin(_frame * 0.012) * 0.015
+  ctx.fillStyle = `rgba(${B}, ${alpha})`
+
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li]
+    const lineGridW = line.length * CHAR_W + (line.length - 1) * CHAR_GAP
+    const linePixelW = lineGridW * STEP
+    const startX = (w - linePixelW) / 2
+    const rowY = startY + li * ((CHAR_H + LINE_GAP) * STEP)
+
+    for (let ci = 0; ci < line.length; ci++) {
+      const glyph = DOT_FONT[line[ci]]
+      if (!glyph) continue
+      const charX = startX + ci * (CHAR_W + CHAR_GAP) * STEP
+
+      for (let row = 0; row < CHAR_H; row++) {
+        const bits = glyph[row]
+        for (let col = 0; col < CHAR_W; col++) {
+          if (bits & (1 << (7 - col))) {
+            ctx.fillRect(
+              charX + col * STEP,
+              rowY + row * STEP,
+              DOT, DOT,
+            )
+          }
+        }
+      }
+    }
   }
 }
 
@@ -281,7 +356,7 @@ function drawPunchOver(
 ) {
   ctx.save()
   const bgAlpha = fade ? Math.max(0, 0.92 * (1 - fadeProgress)) : 0.92
-  ctx.fillStyle = `rgba(209, 209, 209, ${bgAlpha})`
+  ctx.fillStyle = `rgba(240, 240, 240, ${bgAlpha})`
   ctx.fillRect(0, 0, w, h)
 
   const scaleT = Math.min(progress / 0.08, 1)
@@ -349,10 +424,33 @@ export function GestureStage({
   const lastGestureCueRef = useRef<{ labelZh: string; labelEn: string; t: number } | null>(null)
   const palmOpenSmoothRef = useRef(0.155)
 
+  // 用 ref 保存频繁变化的 props，避免 paint 频繁重建导致渲染循环重启
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
+  const emotionRef = useRef(emotion)
+  emotionRef.current = emotion
+  const elapsedRef = useRef(elapsed)
+  elapsedRef.current = elapsed
+  const audioStartedRef = useRef(audioStarted)
+  audioStartedRef.current = audioStarted
+  const showWhiteFlashRef = useRef(showWhiteFlash)
+  showWhiteFlashRef.current = showWhiteFlash
+  const showPunchOverRef = useRef(showPunchOver)
+  showPunchOverRef.current = showPunchOver
+  const punchOverFlickerRef = useRef(punchOverFlicker)
+  punchOverFlickerRef.current = punchOverFlicker
+  const punchOverFadeRef = useRef(punchOverFade)
+  punchOverFadeRef.current = punchOverFade
+  const onGestureHitRef = useRef(onGestureHit)
+  onGestureHitRef.current = onGestureHit
+
   // PUNCH OVER 动画时间追踪
   const whiteFlashStartRef = useRef(0)
   const punchOverStartRef = useRef(0)
   const punchOverFadeStartRef = useRef(0)
+
+  // detectForVideo 需要严格单调递增的时间戳
+  const lastDetectTsRef = useRef(0)
 
   useEffect(() => { if (showWhiteFlash) whiteFlashStartRef.current = performance.now() }, [showWhiteFlash])
   useEffect(() => { if (showPunchOver) punchOverStartRef.current = performance.now() }, [showPunchOver])
@@ -363,15 +461,21 @@ export function GestureStage({
     let cancelled = false
     void (async () => {
       try {
+        console.log('[GestureStage] 正在加载 MediaPipe HandLandmarker...')
         const fileset = await FilesetResolver.forVisionTasks(WASM_BASE)
         const lm = await HandLandmarker.createFromOptions(fileset, {
           baseOptions: { modelAssetPath: HAND_MODEL, delegate: 'GPU' },
           runningMode: 'VIDEO',
           numHands: 2,
         })
-        if (!cancelled) landmarkerRef.current = lm
-        else lm.close()
+        if (!cancelled) {
+          landmarkerRef.current = lm
+          console.log('[GestureStage] HandLandmarker 加载成功 ✓')
+        } else {
+          lm.close()
+        }
       } catch (e) {
+        console.error('[GestureStage] HandLandmarker 加载失败:', e)
         if (!cancelled) onError?.(e instanceof Error ? e.message : String(e))
       }
     })()
@@ -395,13 +499,23 @@ export function GestureStage({
     return () => obs.disconnect()
   }, [])
 
-  // 绘制函数
+  // 绘制函数 — 所有频繁变化的值均从 ref 读取，避免 useCallback 重建
   const paint = useCallback(
     (result: HandLandmarkerResult | null) => {
       const canvas = canvasRef.current
       if (!canvas) return
       const ctx = canvas.getContext('2d')
       if (!ctx) return
+
+      // 从 ref 读取当前值
+      const curPhase = phaseRef.current
+      const curEmotion = emotionRef.current
+      const curElapsed = elapsedRef.current
+      const curAudioStarted = audioStartedRef.current
+      const curShowWhiteFlash = showWhiteFlashRef.current
+      const curShowPunchOver = showPunchOverRef.current
+      const curPunchOverFlicker = punchOverFlickerRef.current
+      const curPunchOverFade = punchOverFadeRef.current
 
       const { w, h } = sizeRef.current
       const dpr = window.devicePixelRatio || 1
@@ -416,19 +530,20 @@ export function GestureStage({
       drawFloatingGlyphs(ctx, w, h, fr)
 
       // 2. 系统信息
-      drawSystemInfo(ctx, phase, emotion, elapsed)
+      drawSystemInfo(ctx, curPhase, curEmotion, curElapsed)
 
       // 3. 根据 phase 画不同内容
-      if (phase === 'idle') {
+      if (curPhase === 'idle') {
+        // drawDotMatrixTitle(ctx, w, h, fr)  // 暂时关闭点阵文字水印
         drawIdleRing(ctx, w, h, fr)
         drawBottomHint(ctx, w, h, '// INPUT EMOTION BELOW TO BEGIN')
-      } else if (phase === 'loading') {
-        drawLoadingState(ctx, w, h, fr, emotion)
-      } else if (phase === 'active') {
+      } else if (curPhase === 'loading') {
+        drawLoadingState(ctx, w, h, fr, curEmotion)
+      } else if (curPhase === 'active') {
         const hands = result?.landmarks ?? []
         const audio = audioRef.current
 
-        if (hands.length > 0 && audio && audioStarted) {
+        if (hands.length > 0 && audio && curAudioStarted) {
           const primary = pickPrimaryHand(hands)
           if (primary) {
             // 绘制所有手的骨架
@@ -463,7 +578,7 @@ export function GestureStage({
             }
             if (hit) {
               lastGestureCueRef.current = { labelZh: hit.labelZh, labelEn: hit.labelEn, t: performance.now() }
-              onGestureHit?.(hit)
+              onGestureHitRef.current?.(hit)
               if (hit.signal !== 'grab') {
                 audio.triggerGestureFx(hit.signal)
               }
@@ -479,7 +594,7 @@ export function GestureStage({
           // 无手势时重置
           gestureDetectorRef.current.reset()
           palmOpenSmoothRef.current = 0.155
-          if (audio && audioStarted) {
+          if (audio && curAudioStarted) {
             audio.applyGesture(undefined)
           }
           drawSignalNull(ctx, h)
@@ -495,27 +610,28 @@ export function GestureStage({
       }
 
       // 4. 白闪
-      if (showWhiteFlash) {
-        const elapsed = performance.now() - whiteFlashStartRef.current
-        drawWhiteFlash(ctx, w, h, Math.min(elapsed / 600, 1))
+      if (curShowWhiteFlash) {
+        const wfElapsed = performance.now() - whiteFlashStartRef.current
+        drawWhiteFlash(ctx, w, h, Math.min(wfElapsed / 600, 1))
       }
 
       // 5. PUNCH OVER
-      if (showPunchOver) {
-        const elapsed = performance.now() - punchOverStartRef.current
-        const fadeP = punchOverFade ? Math.min((performance.now() - punchOverFadeStartRef.current) / 1500, 1) : 0
-        drawPunchOver(ctx, w, h, Math.min(elapsed / 5000, 1), punchOverFlicker, punchOverFade, fadeP)
+      if (curShowPunchOver) {
+        const poElapsed = performance.now() - punchOverStartRef.current
+        const fadeP = curPunchOverFade ? Math.min((performance.now() - punchOverFadeStartRef.current) / 1500, 1) : 0
+        drawPunchOver(ctx, w, h, Math.min(poElapsed / 5000, 1), curPunchOverFlicker, curPunchOverFade, fadeP)
       }
 
       // 6. over 状态
-      if (phase === 'over' && !showPunchOver) {
+      if (curPhase === 'over' && !curShowPunchOver) {
         drawBottomHint(ctx, w, h, '// SESSION ENDED · ENTER NEW EMOTION TO RESTART')
       }
     },
-    [phase, emotion, elapsed, audioStarted, showWhiteFlash, showPunchOver, punchOverFlicker, punchOverFade, audioRef, onGestureHit],
+    // 依赖只有稳定的 ref，不再包含 elapsed/phase 等频繁变化的值
+    [audioRef],
   )
 
-  // 渲染循环
+  // 渲染循环 — 稳定运行，不会因 props 变化而重启
   useEffect(() => {
     const loop = () => {
       const video = videoRef.current
@@ -523,10 +639,15 @@ export function GestureStage({
 
       let result: HandLandmarkerResult | null = null
       if (video && marker && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        // 确保时间戳严格单调递增，避免 MediaPipe 抛出异常
+        const now = performance.now()
+        const ts = now > lastDetectTsRef.current ? now : lastDetectTsRef.current + 1
+        lastDetectTsRef.current = ts
         try {
-          result = marker.detectForVideo(video, performance.now())
-        } catch {
-          // 偶尔帧异常，静默跳过
+          result = marker.detectForVideo(video, ts)
+        } catch (e) {
+          // 仅在非时间戳错误时记录
+          console.warn('[GestureStage] detectForVideo error:', e)
         }
       }
 
