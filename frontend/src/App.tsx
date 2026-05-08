@@ -109,8 +109,8 @@ export default function App() {
           </p>
           <p>
             手势识别（先点击画布启动音画流）：五指张开再收拢 → <code>抓</code>；握紧拳并把拳从近侧移向远处（画面里手变小）→ <code>出拳</code>；
-            四指并拢作刀状、在画面前快速平划 → <code>切</code>。识别结果在画布标题区与工具条
-            <code>LAST_GESTURE</code> 展示。
+            四指并拢作刀状、在画面前快速平划 → <code>切</code>。命中时音乐短时随动作变化（出拳：明显加速与推音量；抓：压低音高再回弹；切：速率抖动）。
+            识别结果在画布与工具条 <code>LAST_GESTURE</code> 展示。
           </p>
           <p className="fine">
             默认内置 <code>sample.wav</code>（随仓库分发）。上传仅保存在本机内存，不会发到服务器。

@@ -73,11 +73,11 @@ export function countExtendedFingers(lm: HandLM[]): number {
   return n
 }
 
-/** 握拳粗判：伸直指少 + 整体张开度低 */
+/** 握拳粗判：伸直指少 + 整体张开度低（略放宽以利出拳） */
 export function isFistLike(lm: HandLM[]): boolean {
   const ext = countExtendedFingers(lm)
   const o = openness(lm)
-  return ext <= 1 && o < 0.14
+  return ext <= 2 && o < 0.168
 }
 
 /** 四指指尖共线程度（越小越像一条“刃”），用于刀手 */
@@ -112,9 +112,9 @@ export function chopPoseScore(lm: HandLM[]): number {
   if (ext < 3) return 0
   const dev = tipsLineDeviation(lm)
   const o = openness(lm)
-  if (o < 0.1 || o > 0.32) return 0
-  if (dev > 0.038) return 0
-  return Math.min(1, (0.038 - dev) / 0.038) * Math.min(1, (ext - 2) / 2)
+  if (o < 0.08 || o > 0.34) return 0
+  if (dev > 0.045) return 0
+  return Math.min(1, (0.045 - dev) / 0.045) * Math.min(1, (ext - 2) / 2)
 }
 
 type FrameSample = {
@@ -127,8 +127,8 @@ type FrameSample = {
   fist: boolean
 }
 
-const HISTORY_MAX = 24
-const COOLDOWN_MS = 950
+const HISTORY_MAX = 28
+const COOLDOWN_MS = 520
 
 /**
  * 基于短序列与简单运动学触发三种离散事件；带冷却避免连发。
@@ -161,7 +161,7 @@ export class GestureEventDetector {
     if (this.history.length > HISTORY_MAX) this.history.shift()
 
     if (nowMs - this.lastEmitAt < COOLDOWN_MS) return null
-    if (this.history.length < 8) return null
+    if (this.history.length < 6) return null
 
     const hit =
       this.tryGrab() ?? this.tryPunch() ?? this.tryChop()
@@ -181,29 +181,39 @@ export class GestureEventDetector {
     const maxExt = Math.max(...past.map((f) => f.ext))
     const drop = maxO - cur.openness
     if (
-      maxExt >= 4 &&
-      maxO > 0.16 &&
-      drop > 0.042 &&
+      maxExt >= 3 &&
+      maxO > 0.14 &&
+      drop > 0.03 &&
       cur.ext <= 2 &&
-      cur.openness < 0.15
+      cur.openness < 0.165
     ) {
       return hitFromSignal('grab')
     }
     return null
   }
 
-  /** 冲拳：握拳 + 手在画面里明显变小（由近到远） */
+  /** 冲拳： mostly握拳 + 手掌跨度缩短（近→远）或“先大后小”轨迹 */
   private tryPunch(): GestureHit | null {
     const h = this.history
-    const last = h.slice(-10)
-    if (last.length < 10) return null
-    if (!last.every((f) => f.fist)) return null
+    if (h.length < 7) return null
+    const last = h.slice(-8)
+    if (last.length < 8) return null
+
+    const fistCount = last.filter((f) => f.fist).length
+    if (fistCount < 6) return null
 
     const span0 = last[0].span
     const span1 = last[last.length - 1].span
-    if (span0 <= 0.04) return null
+    if (span0 <= 0.032) return null
+
     const ratio = span1 / span0
-    if (ratio < 0.88) return hitFromSignal('punch')
+    const mid = last[Math.floor(last.length / 2)].span
+    const valley =
+      mid < span0 * 0.96 &&
+      span1 < span0 * 0.94 &&
+      span0 - Math.min(mid, span1) > span0 * 0.04
+
+    if (ratio < 0.93 || valley) return hitFromSignal('punch')
     return null
   }
 
@@ -212,7 +222,7 @@ export class GestureEventDetector {
     const h = this.history
     const win = h.slice(-8)
     if (win.length < 8) return null
-    const chopOk = win.filter((f) => f.chop > 0.35).length >= 5
+    const chopOk = win.filter((f) => f.chop > 0.28).length >= 4
     if (!chopOk) return null
 
     let maxStep = 0
@@ -226,7 +236,7 @@ export class GestureEventDetector {
         win[win.length - 1].wrist.x - win[0].wrist.x,
         win[win.length - 1].wrist.y - win[0].wrist.y,
       ) || 0
-    if (maxStep > 0.012 && span > 0.055) return hitFromSignal('chop')
+    if (maxStep > 0.0085 && span > 0.038) return hitFromSignal('chop')
     return null
   }
 }

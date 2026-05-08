@@ -410,22 +410,6 @@ export function GestureStage() {
       if (hands.length > 0 && audioRef.current && audioOn) {
         const primary = pickPrimaryHand(hands)
         if (primary) {
-          let hit: GestureHit | null = null
-          try {
-            hit = gestureDetectorRef.current.push(primary, performance.now())
-          } catch {
-            gestureDetectorRef.current.reset()
-          }
-          if (hit) {
-            const t = performance.now()
-            lastGestureCueRef.current = {
-              labelZh: hit.labelZh,
-              labelEn: hit.labelEn,
-              t,
-            }
-            setGestureBanner(hit)
-          }
-
           for (const lm of hands) {
             drawHandThin(ctx, lm, w, h)
           }
@@ -443,6 +427,23 @@ export function GestureStage() {
           playbackRate = constrain(playbackRate, 0.5, 2.0)
           const activationThreshold = 25
           const volume = radius > activationThreshold ? 0.6 : 0
+
+          let hit: GestureHit | null = null
+          try {
+            hit = gestureDetectorRef.current.push(primary, performance.now())
+          } catch {
+            gestureDetectorRef.current.reset()
+          }
+          if (hit) {
+            const t = performance.now()
+            lastGestureCueRef.current = {
+              labelZh: hit.labelZh,
+              labelEn: hit.labelEn,
+              t,
+            }
+            setGestureBanner(hit)
+            audioRef.current.triggerGestureFx(hit.signal)
+          }
 
           audioRef.current.applyGesture(playbackRate, volume)
           drawDataHUD(
