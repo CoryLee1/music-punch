@@ -1,0 +1,7 @@
+1. 在本目录（frontend/public/）放置文件，**文件名必须为**：sample.wav
+
+2. 必须是浏览器可解码的标准 WAV（常见：16-bit PCM）。若导出后仍报错，用
+   Audacity / ffmpeg 等转为 PCM WAV 再试。
+
+3. 开发时访问地址为：http://localhost:5173/sample.wav
+   若浏览器打开该 URL 不是下载/播放 wav，而是网页，说明文件未放对位置。
