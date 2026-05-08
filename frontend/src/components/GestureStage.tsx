@@ -6,6 +6,8 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   GestureEventDetector,
+  openness,
+  palmPitchFactorFromOpenness,
   pickPrimaryHand,
   type GestureHit,
 } from '../lib/handGestures'
@@ -234,6 +236,8 @@ function drawDataHUD(
   radius: number,
   playbackRate: number,
   volume: number,
+  palmOpen: number,
+  palmMul: number,
   w: number,
   h: number,
 ) {
@@ -255,20 +259,26 @@ function drawDataHUD(
   ctx.fillStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
   ctx.fillText(`POS X: ${nf(cx, 1, 0)}  Y: ${nf(cy, 1, 0)}`, cx + 12, cy - 6)
   ctx.fillText(`[ PINCH_R: ${nf(radius, 1, 1)} ]`, cx + 12, cy + 8)
+  const eff = playbackRate * palmMul
   ctx.fillText(
-    `RATE // VOL  ${nf(playbackRate, 1, 2)}  ·  ${nf(volume, 1, 2)}`,
+    `PINCH·EFF_RATE  ${nf(playbackRate, 1, 2)} · ${nf(eff, 1, 2)}  (×PALM)`,
     14,
     h - 38,
   )
 
   ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.55)`
   ctx.lineWidth = 0.55
-  ctx.strokeRect(10, 52, 280, 74)
+  ctx.strokeRect(10, 52, 280, 92)
 
   ctx.fillText('// TRACE · GESTURE_SAMPLE_CONTROLLER', 18, 70)
   ctx.fillText(`RADIUS        ${nf(radius, 1, 1)} px`, 18, 88)
-  ctx.fillText(`RATE_PITCH    ${nf(playbackRate, 1, 2)}  (playbackRate)`, 18, 104)
-  ctx.fillText(`AMPLITUDE     ${nf(volume, 1, 2)}`, 18, 120)
+  ctx.fillText(`PINCH_RATE    ${nf(playbackRate, 1, 2)}  (拇食指)`, 18, 104)
+  ctx.fillText(
+    `PALM_OPEN     ${nf(palmOpen, 1, 3)}  ·  MUL ${nf(palmMul, 1, 3)}`,
+    18,
+    118,
+  )
+  ctx.fillText(`AMPLITUDE     ${nf(volume, 1, 2)}`, 18, 132)
 }
 
 function drawSignalNull(ctx: CanvasRenderingContext2D, h: number): void {
@@ -292,6 +302,7 @@ export function GestureStage() {
     labelEn: string
     t: number
   } | null>(null)
+  const palmOpenSmoothRef = useRef(0.155)
 
   const [audioStarted, setAudioStarted] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
@@ -428,6 +439,11 @@ export function GestureStage() {
           const activationThreshold = 25
           const volume = radius > activationThreshold ? 0.6 : 0
 
+          const oRaw = openness(primary)
+          palmOpenSmoothRef.current =
+            palmOpenSmoothRef.current * 0.74 + oRaw * 0.26
+          const palmMul = palmPitchFactorFromOpenness(palmOpenSmoothRef.current)
+
           let hit: GestureHit | null = null
           try {
             hit = gestureDetectorRef.current.push(primary, performance.now())
@@ -442,10 +458,12 @@ export function GestureStage() {
               t,
             }
             setGestureBanner(hit)
-            audioRef.current.triggerGestureFx(hit.signal)
+            if (hit.signal !== 'grab') {
+              audioRef.current.triggerGestureFx(hit.signal)
+            }
           }
 
-          audioRef.current.applyGesture(playbackRate, volume)
+          audioRef.current.applyGesture(playbackRate, volume, palmMul)
           drawDataHUD(
             ctx,
             thumb,
@@ -453,12 +471,15 @@ export function GestureStage() {
             radius,
             playbackRate,
             volume,
+            palmOpenSmoothRef.current,
+            palmMul,
             w,
             h,
           )
         }
       } else {
         gestureDetectorRef.current.reset()
+        palmOpenSmoothRef.current = 0.155
         if (audioRef.current && audioOn) {
           audioRef.current.applyGesture(undefined, 0)
         }

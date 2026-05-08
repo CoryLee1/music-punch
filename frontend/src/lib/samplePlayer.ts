@@ -120,15 +120,19 @@ export class SampleLoopController {
    * 手势识别命中时调用：在一段时间内抬升/压低 playbackRate 与音量，与捏合并行。
    */
   triggerGestureFx(signal: GestureSignal): void {
+    if (signal === 'grab') return
     this.fxSignal = signal
-    this.fxDurationMs =
-      signal === 'punch' ? 360 : signal === 'grab' ? 260 : 200
+    this.fxDurationMs = signal === 'punch' ? 360 : 200
     this.fxEndPerf = performance.now() + this.fxDurationMs
   }
 
+  /**
+   * @param palmSpreadMul 手掌张开度推导的倍率（约 0.72～1.32）：拢手偏低音、张开偏高音；与 pinch 的 playbackRate 相乘。
+   */
   applyGesture(
     playbackRate: number | undefined,
     volumeLinear: number | undefined,
+    palmSpreadMul?: number,
   ): void {
     let r =
       playbackRate != null
@@ -138,6 +142,12 @@ export class SampleLoopController {
       volumeLinear != null
         ? Math.min(1, Math.max(0, volumeLinear))
         : null
+
+    if (r != null && palmSpreadMul != null) {
+      const m = Math.min(1.38, Math.max(0.62, palmSpreadMul))
+      r *= m
+      r = Math.min(2.55, Math.max(0.42, r))
+    }
 
     const now = performance.now()
     if (this.fxSignal && now >= this.fxEndPerf) {
@@ -160,10 +170,6 @@ export class SampleLoopController {
         const peakR = Math.min(2.55, r + 1.05)
         r = r + (peakR - r) * punchCurve
         v = Math.min(1, v + 0.48 * punchCurve)
-      } else if (this.fxSignal === 'grab') {
-        const dip = 0.52 + 0.48 * (1 - punchCurve * 0.62)
-        r = Math.max(0.42, r * dip)
-        v = Math.min(1, v + 0.24 * punchCurve)
       } else {
         const chopCurve = Math.sin(phase * Math.PI) * phase
         r = Math.min(

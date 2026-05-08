@@ -53,6 +53,23 @@ export function openness(lm: HandLM[]): number {
   return s / 5
 }
 
+/**
+ * 手掌张开度 → 对 pinch 变速的乘法因子：拢手偏低、张开偏高（连续 pitch 感）。
+ * `o` 为 {@link openness} 取值；`lo`/`hi` 可按摄像头距离微调。
+ */
+export function palmPitchFactorFromOpenness(
+  o: number,
+  lo = 0.08,
+  hi = 0.23,
+): number {
+  const minMul = 0.72
+  const maxMul = 1.32
+  if (o <= lo) return minMul
+  if (o >= hi) return maxMul
+  const t = (o - lo) / (hi - lo)
+  return minMul + t * (maxMul - minMul)
+}
+
 /** 指尖是否相对指节“伸直”（相对腕部更远） */
 function fingerExtended(lm: HandLM[], tip: number, pip: number): boolean {
   const wrist = lm[WRIST]
@@ -169,23 +186,23 @@ export class GestureEventDetector {
     return hit
   }
 
-  /** 抓：此前窗口曾明显张开，当前已收拢 */
+  /** 抓：此前窗口曾张开，当前收拢（阈值放宽以提高灵敏度） */
   private tryGrab(): GestureHit | null {
     const h = this.history
-    if (h.length < 12) return null
-    const past = h.slice(-16, -4)
+    if (h.length < 9) return null
+    const past = h.slice(-15, -3)
     const cur = h[h.length - 1]
-    if (past.length < 5) return null
+    if (past.length < 4) return null
 
     const maxO = Math.max(...past.map((f) => f.openness))
     const maxExt = Math.max(...past.map((f) => f.ext))
     const drop = maxO - cur.openness
     if (
-      maxExt >= 3 &&
-      maxO > 0.14 &&
-      drop > 0.03 &&
-      cur.ext <= 2 &&
-      cur.openness < 0.165
+      maxExt >= 2 &&
+      maxO > 0.118 &&
+      drop > 0.018 &&
+      cur.ext <= 3 &&
+      cur.openness < 0.18
     ) {
       return hitFromSignal('grab')
     }
