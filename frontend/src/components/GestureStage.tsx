@@ -4,6 +4,11 @@ import {
   type HandLandmarkerResult,
 } from '@mediapipe/tasks-vision'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  GestureEventDetector,
+  pickPrimaryHand,
+  type GestureHit,
+} from '../lib/handGestures'
 import { SampleLoopController } from '../lib/samplePlayer'
 
 const W = 640
@@ -201,6 +206,27 @@ function drawPinchConstruct(
   ctx.fill()
 }
 
+function drawGestureCue(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  hit: { labelZh: string; labelEn: string },
+  ageMs: number,
+): void {
+  const fade = Math.max(0, 1 - ageMs / 4200)
+  if (fade <= 0) return
+  ctx.save()
+  ctx.font = '13px "IBM Plex Mono", monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  const y = 96
+  ctx.fillStyle = `rgba(248, 248, 250, ${0.15 + 0.55 * fade})`
+  ctx.fillText(`// GESTURE · ${hit.labelZh}  /  ${hit.labelEn}`, w / 2, y)
+  ctx.lineWidth = 0.6
+  ctx.strokeStyle = `rgba(248, 248, 250, ${0.25 + 0.45 * fade})`
+  ctx.strokeRect(w / 2 - 158, y - 6, 316, 26)
+  ctx.restore()
+}
+
 function drawDataHUD(
   ctx: CanvasRenderingContext2D,
   thumb: LM,
@@ -260,6 +286,12 @@ export function GestureStage() {
   const audioRef = useRef<SampleLoopController | null>(null)
   const rafRef = useRef<number>(0)
   const frameRef = useRef(0)
+  const gestureDetectorRef = useRef(new GestureEventDetector())
+  const lastGestureCueRef = useRef<{
+    labelZh: string
+    labelEn: string
+    t: number
+  } | null>(null)
 
   const [audioStarted, setAudioStarted] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
@@ -267,6 +299,7 @@ export function GestureStage() {
   const [uploadErr, setUploadErr] = useState<string | null>(null)
   const [uploadBusy, setUploadBusy] = useState(false)
   const [clipLabel, setClipLabel] = useState('内置 · sample.wav')
+  const [gestureBanner, setGestureBanner] = useState<GestureHit | null>(null)
 
   useEffect(() => {
     audioRef.current = new SampleLoopController()
@@ -375,10 +408,29 @@ export function GestureStage() {
       const hands = result?.landmarks ?? []
 
       if (hands.length > 0 && audioRef.current && audioOn) {
-        for (const lm of hands) {
-          drawHandThin(ctx, lm, w, h)
-          const thumb = lm[THUMB]
-          const indexFinger = lm[INDEX]
+        const primary = pickPrimaryHand(hands)
+        if (primary) {
+          let hit: GestureHit | null = null
+          try {
+            hit = gestureDetectorRef.current.push(primary, performance.now())
+          } catch {
+            gestureDetectorRef.current.reset()
+          }
+          if (hit) {
+            const t = performance.now()
+            lastGestureCueRef.current = {
+              labelZh: hit.labelZh,
+              labelEn: hit.labelEn,
+              t,
+            }
+            setGestureBanner(hit)
+          }
+
+          for (const lm of hands) {
+            drawHandThin(ctx, lm, w, h)
+          }
+          const thumb = primary[THUMB]
+          const indexFinger = primary[INDEX]
           const radius = Math.hypot(
             thumb.x * w - indexFinger.x * w,
             thumb.y * h - indexFinger.y * h,
@@ -405,10 +457,16 @@ export function GestureStage() {
           )
         }
       } else {
+        gestureDetectorRef.current.reset()
         if (audioRef.current && audioOn) {
           audioRef.current.applyGesture(undefined, 0)
         }
         drawSignalNull(ctx, h)
+      }
+
+      const cue = lastGestureCueRef.current
+      if (cue) {
+        drawGestureCue(ctx, w, cue, performance.now() - cue.t)
       }
     },
     [],
@@ -496,6 +554,11 @@ export function GestureStage() {
           {uploadBusy ? '// LOADING…' : '// UPLOAD_LOCAL_AUDIO'}
         </button>
         <span className="gesture-clip-label">{clipLabel}</span>
+        <span className="gesture-signal-broadcast" aria-live="polite">
+          {gestureBanner
+            ? `// LAST_GESTURE · ${gestureBanner.labelZh} · ${gestureBanner.labelEn}`
+            : '// LAST_GESTURE · —'}
+        </span>
       </div>
       <div
         className="gesture-canvas-host"

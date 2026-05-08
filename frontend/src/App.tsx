@@ -107,6 +107,11 @@ export default function App() {
             可用 <code>// UPLOAD_LOCAL_AUDIO</code> 上传本地音频；再点击画面启动。
             摄像头需授权；拇食指距离映射 <code>playbackRate</code>（越快越高），过近静音。
           </p>
+          <p>
+            手势识别（先点击画布启动音画流）：五指张开再收拢 → <code>抓</code>；握紧拳并把拳从近侧移向远处（画面里手变小）→ <code>出拳</code>；
+            四指并拢作刀状、在画面前快速平划 → <code>切</code>。识别结果在画布标题区与工具条
+            <code>LAST_GESTURE</code> 展示。
+          </p>
           <p className="fine">
             默认内置 <code>sample.wav</code>（随仓库分发）。上传仅保存在本机内存，不会发到服务器。
             纯静态原型见 <code>legacy-p5/</code>。

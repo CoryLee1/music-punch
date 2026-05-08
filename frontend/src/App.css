@@ -121,6 +121,15 @@
   white-space: nowrap;
 }
 
+.gesture-signal-broadcast {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: right;
+}
+
 .gesture-errors {
   font-size: 11px;
   color: #ff6b7a;
