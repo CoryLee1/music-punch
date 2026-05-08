@@ -1,4 +1,10 @@
-import { type FormEvent, type KeyboardEvent, useEffect, useState } from 'react'
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react'
 import { GestureStage } from './components/GestureStage'
 import './App.css'
 
@@ -8,6 +14,14 @@ export default function App() {
   const [api, setApi] = useState<ApiState>('idle')
   const [chatDraft, setChatDraft] = useState('')
   const [chatLines, setChatLines] = useState<string[]>([])
+  const [textPhysicsJob, setTextPhysicsJob] = useState<{
+    id: number
+    text: string
+  } | null>(null)
+
+  const onTextPhysicsComplete = useCallback(() => {
+    setTextPhysicsJob(null)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -31,6 +45,7 @@ export default function App() {
     if (!text) return
     setChatLines((prev) => [...prev, text])
     setChatDraft('')
+    setTextPhysicsJob({ id: Date.now(), text })
   }
 
   function submitChat(ev: FormEvent) {
@@ -67,13 +82,18 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        <GestureStage />
+        <GestureStage
+          textPhysicsJob={textPhysicsJob}
+          onTextPhysicsComplete={onTextPhysicsComplete}
+        />
 
         <section className="chat-panel" aria-label="文字对话">
           <div className="chat-label">// DIALOG_STREAM · LOCAL_BUFFER</div>
           <div className="chat-log" role="log">
             {chatLines.length === 0 ? (
-              <p className="chat-log-empty">// 尚无消息 · 输入后回车或发送</p>
+              <p className="chat-log-empty">
+                // 尚无消息 · 发送后先 TECHNO_SCAN 假解析 → 字形落体
+              </p>
             ) : (
               chatLines.map((line, i) => (
                 <p key={`${i}-${line.slice(0, 24)}`} className="chat-line">
@@ -112,6 +132,9 @@ export default function App() {
             手掌拢紧音调变低、五指张开音调变高（与拇食指 pinch 变速相乘）。
             握紧拳由近移远 → <code>出拳</code>（短时加速）；四指刀手快划 → <code>切</code>。
             画布 HUD 中 <code>PALM_OPEN</code> / <code>MUL</code> 为开合与倍率。
+          </p>
+          <p className="fine">
+            在对话区发送文本：会先出现 TECHNO_SCAN 示意「文本→音乐」解析，再在画布区用 Matter.js 让每个字形落体，结束后照常点击画布启动/手势控节奏。
           </p>
           <p className="fine">
             默认循环底音为 <code>piano-beat-boom-bap-mixed-drums_95bpm_Asharp.wav</code>（原 Key 为 A#），出拳叠加 <code>punch-sound-effect-wet_96bpm.wav</code>；仍可将其它素材放到 <code>public/</code> 并用上传替换。

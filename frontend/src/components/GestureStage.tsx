@@ -15,11 +15,15 @@ import {
   PLAYBACK_GAIN,
   SampleLoopController,
 } from '../lib/samplePlayer'
+import { startTextMatterWorld } from '../lib/runTextMatter'
+import { TechnoScanOverlay } from './TechnoScanOverlay'
 
 const W = 640
 const H = 480
 const THUMB = 4
 const INDEX = 8
+const TEXT_SCAN_MS = 4400
+const TEXT_MATTER_MS = 7600
 
 const WASM_BASE =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
@@ -293,10 +297,21 @@ function drawSignalNull(ctx: CanvasRenderingContext2D, h: number): void {
   ctx.fillText('// SIGNAL: NULL · NO_HAND', 14, h - 18)
 }
 
-export function GestureStage() {
+export type TextPhysicsJob = { id: number; text: string }
+
+type GestureStageProps = {
+  textPhysicsJob?: TextPhysicsJob | null
+  onTextPhysicsComplete?: () => void
+}
+
+export function GestureStage({
+  textPhysicsJob = null,
+  onTextPhysicsComplete,
+}: GestureStageProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const matterCanvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const audioRef = useRef<SampleLoopController | null>(null)
@@ -319,6 +334,9 @@ export function GestureStage() {
     '内置 · piano-beat-drums 95bpm',
   )
   const [gestureBanner, setGestureBanner] = useState<GestureHit | null>(null)
+  const [sequencePhase, setSequencePhase] = useState<
+    'idle' | 'scan' | 'matter'
+  >('idle')
 
   useEffect(() => {
     audioRef.current = new SampleLoopController()
@@ -395,6 +413,49 @@ export function GestureStage() {
       video.removeAttribute('src')
     }
   }, [])
+
+  useEffect(() => {
+    if (!textPhysicsJob) return
+    const { text } = textPhysicsJob
+    setSequencePhase('scan')
+
+    let matterTeardown: (() => void) | undefined
+    let matterTimeoutId: ReturnType<typeof window.setTimeout> | undefined
+
+    const scanTimerId = window.setTimeout(() => {
+      setSequencePhase('matter')
+      const main = canvasRef.current
+      const matterEl = matterCanvasRef.current
+      const ww = main?.width || W
+      const hh = main?.height || H
+      if (matterEl && ww > 0 && hh > 0) {
+        matterEl.width = ww
+        matterEl.height = hh
+        matterTeardown = startTextMatterWorld(matterEl, text)
+      }
+      matterTimeoutId = window.setTimeout(() => {
+        matterTeardown?.()
+        matterTeardown = undefined
+        const mc = matterCanvasRef.current
+        if (mc) {
+          mc.getContext('2d')?.clearRect(0, 0, mc.width, mc.height)
+        }
+        setSequencePhase('idle')
+        onTextPhysicsComplete?.()
+      }, TEXT_MATTER_MS)
+    }, TEXT_SCAN_MS)
+
+    return () => {
+      window.clearTimeout(scanTimerId)
+      if (matterTimeoutId !== undefined) window.clearTimeout(matterTimeoutId)
+      matterTeardown?.()
+      const mc = matterCanvasRef.current
+      if (mc) {
+        mc.getContext('2d')?.clearRect(0, 0, mc.width, mc.height)
+      }
+      setSequencePhase('idle')
+    }
+  }, [textPhysicsJob?.id, onTextPhysicsComplete])
 
   const paint = useCallback(
     (result: HandLandmarkerResult | null, audioOn: boolean) => {
@@ -615,6 +676,16 @@ export function GestureStage() {
       >
         <video ref={videoRef} className="gesture-video" muted playsInline />
         <canvas ref={canvasRef} className="gesture-canvas" />
+        <canvas
+          ref={matterCanvasRef}
+          width={W}
+          height={H}
+          className={`gesture-matter-canvas${sequencePhase === 'matter' ? ' is-live' : ''}`}
+          aria-hidden
+        />
+        {sequencePhase === 'scan' && textPhysicsJob ? (
+          <TechnoScanOverlay hint={textPhysicsJob.text} />
+        ) : null}
       </div>
     </div>
   )
