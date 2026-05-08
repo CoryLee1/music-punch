@@ -183,6 +183,7 @@ export class SampleLoopController {
   }
 
   stop(): void {
+    this.fxSignal = null
     try {
       this.player?.stop()
     } catch {

@@ -104,7 +104,7 @@ export default function App() {
 
         <aside className="app-hint">
           <p>
-            可用 <code>// UPLOAD_LOCAL_AUDIO</code> 上传本地音频；再点击画面启动。
+            可用 <code>// UPLOAD_LOCAL_AUDIO</code> 上传本地音频；点击画面启动循环，<code>// STOP_AUDIO</code> 停止。
             摄像头需授权；拇食指距离只映射 <code>playbackRate</code>（越快越高），音量固定常驻。
           </p>
           <p>

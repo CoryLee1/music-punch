@@ -539,6 +539,11 @@ export function GestureStage() {
     })()
   }
 
+  const onStopPlayback = () => {
+    audioRef.current?.stop()
+    setAudioStarted(false)
+  }
+
   const onPointerDown = async () => {
     if (audioStarted) return
     try {
@@ -577,6 +582,15 @@ export function GestureStage() {
           onClick={() => fileInputRef.current?.click()}
         >
           {uploadBusy ? '// LOADING…' : '// UPLOAD_LOCAL_AUDIO'}
+        </button>
+        <button
+          type="button"
+          className="gesture-stop-btn"
+          disabled={!audioStarted}
+          onClick={onStopPlayback}
+          aria-label="停止音乐"
+        >
+          // STOP_AUDIO
         </button>
         <span className="gesture-clip-label">{clipLabel}</span>
         <span className="gesture-signal-broadcast" aria-live="polite">

@@ -113,6 +113,31 @@
   cursor: not-allowed;
 }
 
+.gesture-stop-btn {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: rgba(246, 246, 248, 0.92);
+  background: transparent;
+  border: 1px solid rgba(255, 120, 130, 0.45);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset;
+}
+
+.gesture-stop-btn:hover:not(:disabled) {
+  background: rgba(255, 100, 110, 0.08);
+  border-color: rgba(255, 140, 148, 0.55);
+}
+
+.gesture-stop-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.35);
+}
+
 .gesture-clip-label {
   color: rgba(255, 255, 255, 0.42);
   max-width: min(420px, 100%);
