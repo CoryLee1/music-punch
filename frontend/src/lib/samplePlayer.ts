@@ -12,7 +12,11 @@ const USER_FILE_MAX_BYTES = 40 * 1024 * 1024
 /** 播放中常驻输出增益（与 start()/loadFromFile 后目标一致），手势不再调制 */
 export const PLAYBACK_GAIN = 0.5
 
-const PUNCH_SFX_URL = '/punch-sound.wav'
+/** 默认循环底音（`#` 在 URL 中须编码为 %23） */
+export const DEFAULT_LOOP_URL =
+  '/piano-beat-boom-bap-mixed-drums_95bpm_A%23.wav'
+
+const PUNCH_SFX_URL = '/punch-sound-effect-wet_96bpm.wav'
 /** 出拳采样相对主干的响度（0~1） */
 const PUNCH_SFX_GAIN = 0.52
 
@@ -34,7 +38,7 @@ export class SampleLoopController {
   private fxEndPerf = 0
   private fxDurationMs = 300
 
-  constructor(private readonly sampleUrl = '/sample.wav') {
+  constructor(private readonly sampleUrl = DEFAULT_LOOP_URL) {
     this.gain = new Tone.Gain(0).toDestination()
     this.sfxGain = new Tone.Gain(PUNCH_SFX_GAIN).toDestination()
   }
@@ -98,18 +102,18 @@ export class SampleLoopController {
     const res = await fetch(this.sampleUrl, { cache: 'no-store' })
     if (!res.ok) {
       throw Error(
-        `无法加载「${this.sampleUrl}」（HTTP ${res.status}）。请将有效的 sample.wav 放到 frontend/public/ 目录后刷新页面。`,
+        `无法加载「${this.sampleUrl}」（HTTP ${res.status}）。请将有效的循环 WAV 放到 frontend/public/ 后刷新页面。`,
       )
     }
     const buf = await res.arrayBuffer()
     if (buf.byteLength < 44) {
       throw Error(
-        '音频文件过小或为空。请确认 frontend/public/sample.wav 是完整导出的 WAV。',
+        '音频文件过小或为空。请确认 frontend/public/ 下默认循环 WAV 完整。',
       )
     }
     if (readRiffTag(buf) !== 'RIFF') {
       throw Error(
-        `「${this.sampleUrl}」不是 WAV（缺少 RIFF 头）。常见原因：未放置 sample.wav，或开发服务器把该路径回退成了 HTML（请检查 public 目录与文件名大小写）。`,
+        `「${this.sampleUrl}」不是 WAV（缺少 RIFF 头）。请检查 public 目录与文件名（含 # 时 URL 用 %23）。`,
       )
     }
     return buf

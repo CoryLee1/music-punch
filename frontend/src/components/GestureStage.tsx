@@ -315,7 +315,9 @@ export function GestureStage() {
   const [sampleError, setSampleError] = useState<string | null>(null)
   const [uploadErr, setUploadErr] = useState<string | null>(null)
   const [uploadBusy, setUploadBusy] = useState(false)
-  const [clipLabel, setClipLabel] = useState('内置 · sample.wav')
+  const [clipLabel, setClipLabel] = useState(
+    '内置 · piano-beat-drums 95bpm',
+  )
   const [gestureBanner, setGestureBanner] = useState<GestureHit | null>(null)
 
   useEffect(() => {

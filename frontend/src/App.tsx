@@ -114,7 +114,7 @@ export default function App() {
             画布 HUD 中 <code>PALM_OPEN</code> / <code>MUL</code> 为开合与倍率。
           </p>
           <p className="fine">
-            默认内置 <code>sample.wav</code>（随仓库分发）。上传仅保存在本机内存，不会发到服务器。
+            默认循环底音为 <code>piano-beat-boom-bap…_A#.wav</code>，出拳叠加 <code>punch-sound-effect-wet_96bpm.wav</code>；仍可将其它素材放到 <code>public/</code> 并用上传替换。
             纯静态原型见 <code>legacy-p5/</code>。
           </p>
         </aside>
