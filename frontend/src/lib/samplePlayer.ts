@@ -1,11 +1,16 @@
 import * as Tone from 'tone'
 
+import type { GestureSignal } from './handGestures'
+
 function readRiffTag(buf: ArrayBuffer): string {
   const u8 = new Uint8Array(buf, 0, 4)
   return String.fromCharCode(u8[0], u8[1], u8[2], u8[3])
 }
 
 const USER_FILE_MAX_BYTES = 40 * 1024 * 1024
+
+/** 播放中常驻输出增益（与 start()/loadFromFile 后目标一致），手势不再调制 */
+export const PLAYBACK_GAIN = 0.5
 
 /**
  * 用 Tone.Player + 解码后的 AudioBuffer，避免 URL 加载失败时仅报 “Unable to decode audio data”。
@@ -16,6 +21,10 @@ export class SampleLoopController {
   private readonly gain: Tone.Gain
   /** 用户是否已通过 start() 或其它方式开始过播放（用于上传后决定是否自动续播） */
   private hasStartedPlayback = false
+  /** 离散手势触发的短时调制（与捏合控制的 rate/vol 叠加） */
+  private fxSignal: GestureSignal | null = null
+  private fxEndPerf = 0
+  private fxDurationMs = 300
 
   constructor(private readonly sampleUrl = '/sample.wav') {
     this.gain = new Tone.Gain(0).toDestination()
@@ -71,7 +80,7 @@ export class SampleLoopController {
       this.player.start(0)
     }
     this.hasStartedPlayback = true
-    this.gain.gain.rampTo(0.5, 0.06)
+    this.gain.gain.rampTo(PLAYBACK_GAIN, 0.06)
   }
 
   /**
@@ -106,25 +115,75 @@ export class SampleLoopController {
 
     if (wasPlaying) {
       this.player.start(0)
-      this.gain.gain.rampTo(0.5, 0.06)
+      this.gain.gain.rampTo(PLAYBACK_GAIN, 0.06)
     }
   }
 
+  /**
+   * 手势命中时短时调制 playbackRate（不再调制音量）。
+   */
+  triggerGestureFx(signal: GestureSignal): void {
+    if (signal === 'grab') return
+    this.fxSignal = signal
+    this.fxDurationMs = signal === 'punch' ? 360 : 200
+    this.fxEndPerf = performance.now() + this.fxDurationMs
+  }
+
+  /**
+   * 捏合/手掌只调制 playbackRate；输出音量固定为 {@link PLAYBACK_GAIN}。
+   * @param palmSpreadMul 手掌张开度倍率，与 pinch rate 相乘
+   */
   applyGesture(
     playbackRate: number | undefined,
-    volumeLinear: number | undefined,
+    palmSpreadMul?: number,
   ): void {
-    if (this.player && playbackRate != null) {
-      const r = Math.min(2, Math.max(0.5, playbackRate))
+    let r =
+      playbackRate != null
+        ? Math.min(2, Math.max(0.5, playbackRate))
+        : null
+
+    if (r != null && palmSpreadMul != null) {
+      const m = Math.min(1.38, Math.max(0.62, palmSpreadMul))
+      r *= m
+      r = Math.min(2.55, Math.max(0.42, r))
+    }
+
+    const now = performance.now()
+    if (this.fxSignal && now >= this.fxEndPerf) {
+      this.fxSignal = null
+    }
+
+    if (
+      this.fxSignal !== null &&
+      r != null &&
+      now < this.fxEndPerf
+    ) {
+      const phase = Math.max(
+        0,
+        Math.min(1, (this.fxEndPerf - now) / this.fxDurationMs),
+      )
+      const punchCurve = phase * phase
+
+      if (this.fxSignal === 'punch') {
+        const peakR = Math.min(2.55, r + 1.05)
+        r = r + (peakR - r) * punchCurve
+      } else {
+        const chopCurve = Math.sin(phase * Math.PI) * phase
+        r = Math.min(
+          2.45,
+          r + 0.5 * chopCurve + 0.09 * Math.sin(phase * Math.PI * 5) * phase,
+        )
+      }
+    }
+
+    if (this.player && r != null) {
       this.player.playbackRate = r
     }
-    if (volumeLinear != null) {
-      const v = Math.min(1, Math.max(0, volumeLinear))
-      this.gain.gain.rampTo(v, 0.06)
-    }
+    this.gain.gain.rampTo(PLAYBACK_GAIN, 0.05)
   }
 
   stop(): void {
+    this.fxSignal = null
     try {
       this.player?.stop()
     } catch {
@@ -138,6 +197,7 @@ export class SampleLoopController {
     this.player?.dispose()
     this.player = null
     this.hasStartedPlayback = false
+    this.fxSignal = null
     this.gain.dispose()
   }
 }

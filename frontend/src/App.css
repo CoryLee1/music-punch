@@ -1,173 +1,545 @@
+/* ========== 全局布局 ========== */
 .app {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 20px 18px 48px;
-  color: rgb(28, 28, 30);
-}
-
-.app-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px 24px;
-  margin-bottom: 18px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-.app-bar-title {
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-}
-
-.app-bar-title .mark {
-  color: rgba(0, 0, 0, 0.38);
-  margin-right: 6px;
-}
-
-.app-bar-meta {
-  font-size: 11px;
-  color: rgba(0, 0, 0, 0.52);
+  width: 100vw;
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
+  background: var(--bg-primary);
+  overflow: hidden;
+  position: relative;
 }
 
-.app-bar-meta .sub {
-  opacity: 0.85;
-}
-
-.app-bar-meta code {
-  font-size: 10px;
-  padding: 1px 5px;
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 3px;
-}
-
+/* ========== 顶部区域（主内容：左2/3 + 右1/3） ========== */
 .app-main {
+  flex: 1;
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  min-height: 0;
+  position: relative;
 }
 
-.gesture-wrap {
+/* --- 左侧互动区 2/3 --- */
+.app-stage {
+  flex: 2;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--border-color);
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* 互动区内的画布容器 */
+.stage-canvas-wrap {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.stage-canvas-wrap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 等待/空状态 */
+.stage-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  gap: 24px;
+  user-select: none;
+}
+
+.stage-idle-icon {
+  width: 120px;
+  height: 120px;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  animation: pulse-ring 3s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+.stage-idle-icon::before {
+  content: '⊹';
+  font-size: 32px;
+  color: var(--text-secondary);
+}
+
+.stage-idle-text {
+  text-align: center;
+}
+
+.stage-idle-text p {
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.stage-idle-text p:first-child {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  letter-spacing: 0.08em;
+}
+
+/* Loading 状态 */
+.stage-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  gap: 32px;
+  user-select: none;
+}
+
+.loading-ring {
+  width: 80px;
+  height: 80px;
+  border: 1px solid var(--border-color);
+  border-top-color: var(--text-primary);
+  border-radius: 50%;
+  animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.loading-emotion {
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-top: 8px;
+  letter-spacing: 0.05em;
+}
+
+.loading-dots::after {
+  content: '';
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
+
+/* --- 右侧控制面板（缩窄） --- */
+.app-panel {
+  flex: 0 0 280px;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  overflow-y: auto;
+}
+
+/* 面板头部 */
+.panel-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-title {
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.panel-status {
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+}
+
+.panel-status.connected {
+  color: rgba(0, 189, 214, 0.7);
+}
+
+/* 摄像头预览 + HUD */
+.panel-camera {
+  position: relative;
+  width: calc(100% - 24px);
+  margin: 10px auto;
+  aspect-ratio: 16 / 9;
+  background: #1c1713;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.panel-camera video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  opacity: 0.75;
+  filter: grayscale(1) contrast(1.1);
+}
+
+/* HUD 叠加 canvas */
+.camera-hud-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.panel-camera-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+}
+
+.camera-off-label {
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* 手势映射说明 */
+.panel-gesture-map {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(0, 189, 214, 0.02);
+}
+
+.gesture-map-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.gesture-map-key {
+  color: rgba(0, 189, 214, 0.55);
+  min-width: 48px;
+}
+
+.gesture-map-eq {
+  color: var(--text-muted);
+}
+
+.gesture-map-val {
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+/* 手势事件横幅 */
+.panel-gesture-banner {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 189, 214, 0.04);
+}
+
+.gesture-banner-label {
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.gesture-banner-value {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(0, 189, 214, 0.8);
+  font-weight: 500;
+}
+
+/* 音频控制区 */
+.panel-audio-controls {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.gesture-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  font-size: 11px;
-}
-
-.gesture-file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.gesture-upload-btn {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  padding: 6px 12px;
-  cursor: pointer;
-  color: rgb(28, 28, 30);
-  background: transparent;
-  border: 1px solid rgba(0, 0, 0, 0.22);
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45) inset;
-}
-
-.gesture-upload-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.gesture-upload-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.gesture-clip-label {
-  color: rgba(0, 0, 0, 0.45);
-  max-width: min(420px, 100%);
+.audio-label {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  text-transform: uppercase;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.gesture-errors {
-  font-size: 11px;
-  color: #8b2942;
-  line-height: 1.5;
+/* 波形可视化区域 */
+.panel-visualizer {
+  flex: 1;
+  min-height: 60px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.gesture-errors p {
-  margin: 0;
+.visualizer-label {
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  color: var(--text-muted);
+  text-transform: uppercase;
 }
 
-.gesture-canvas-host {
-  position: relative;
-  width: fit-content;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55) inset;
+.visualizer-canvas {
+  flex: 1;
+  width: 100%;
+  min-height: 50px;
+}
+
+.visualizer-canvas canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 控制按钮区域 */
+.panel-controls {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-btn {
+  flex: 1;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid var(--border-light);
+  color: var(--text-primary);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.control-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.control-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.control-btn.primary {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.control-btn.danger {
+  border-color: rgba(220, 60, 60, 0.5);
+  color: rgba(220, 100, 100, 0.9);
+}
+
+.control-btn.danger:hover {
+  background: rgba(220, 60, 60, 0.1);
+  border-color: rgba(220, 60, 60, 0.7);
+  color: rgba(255, 120, 120, 1);
+}
+
+/* 倒计时 */
+.panel-timer {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.timer-label {
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.timer-display {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-display.warning {
+  color: rgba(255, 100, 100, 0.85);
+  animation: timer-pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes timer-pulse {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+
+
+/* 信息条 */
+.panel-info {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+
+.info-key {
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.info-val {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ========== 底部情绪输入区 ========== */
+.app-input-bar {
+  height: 64px;
+  min-height: 64px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
+  background: var(--bg-secondary);
+}
+
+.input-prefix {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.emotion-input {
+  flex: 1;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  caret-color: var(--accent);
+}
+
+.emotion-input::placeholder {
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+.emotion-input:disabled {
+  opacity: 0.4;
+}
+
+.input-submit {
+  padding: 8px 20px;
+  background: transparent;
+  border: 1px solid var(--border-light);
+  color: var(--text-primary);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.input-submit:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.input-submit:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ========== 系统错误提示 ========== */
+.app-errors {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 100;
+  font-size: 10px;
+  color: rgba(255, 100, 100, 0.8);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 500px;
+}
+
+.app-errors p {
+  margin: 0;
+  padding: 6px 12px;
+  background: rgba(255, 50, 50, 0.08);
+  border: 1px solid rgba(255, 50, 50, 0.15);
   border-radius: 2px;
 }
 
-.gesture-canvas-host:focus {
-  outline: 1px solid rgba(0, 0, 0, 0.35);
-  outline-offset: 2px;
-}
-
-.gesture-video {
-  position: absolute;
-  width: 0;
-  height: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.gesture-canvas {
-  display: block;
-  vertical-align: top;
-}
-
-.app-hint {
-  font-size: 11px;
-  line-height: 1.55;
-  color: rgba(0, 0, 0, 0.48);
-}
-
-.app-hint p {
-  margin: 0 0 8px;
-}
-
-.app-hint p:last-child {
-  margin-bottom: 0;
-}
-
-.app-hint code {
-  font-size: 10px;
-  padding: 1px 4px;
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 3px;
-}
-
-.app-hint .fine {
-  font-size: 10px;
-  opacity: 0.9;
-}
+/* PUNCH OVER 和白闪效果已移至 GestureStage canvas 内绘制 */
