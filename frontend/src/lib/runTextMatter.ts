@@ -36,21 +36,22 @@ export function startTextMatterWorld(
   })
   Matter.Composite.add(engine.world, [ground, left, right, ceiling])
 
-  const cols = Math.max(8, Math.floor((w - 56) / 30))
+  const cols = Math.max(4, Math.floor((w - 64) / 50))
   const bodies: Matter.Body[] = []
   glyphs.forEach((ch, i) => {
     const col = i % cols
     const row = Math.floor(i / cols)
-    const bw = ch === ' ' ? 12 : ch === '\n' ? 12 : 26
-    const bh = 30
-    const x = 28 + col * 30 + (Math.random() - 0.5) * 10
-    const y = -45 - row * 34 - Math.random() * 24
+    const bw = ch === ' ' ? 18 : ch === '\n' ? 18 : 44
+    const bh = 48
+    const colStep = 50
+    const x = 32 + col * colStep + (Math.random() - 0.5) * 8
+    const y = -60 - row * 46 - Math.random() * 28
     if (ch === '\n') return
     const b = Matter.Bodies.rectangle(x, y, bw, bh, {
       restitution: 0.28,
       friction: 0.12,
       frictionAir: 0.012,
-      chamfer: { radius: 5 },
+      chamfer: { radius: 6 },
       label: ch,
     })
     bodies.push(b)
@@ -61,8 +62,8 @@ export function startTextMatterWorld(
   const tick = () => {
     Matter.Engine.update(engine, 1000 / 60)
     ctx.clearRect(0, 0, w, h)
-    ctx.strokeStyle = 'rgba(30, 96, 207, 0.7)'
-    ctx.lineWidth = 1.25
+    ctx.strokeStyle = 'rgba(248, 248, 250, 0.35)'
+    ctx.lineWidth = 1
     ctx.strokeRect(1, 1, w - 2, h - 2)
 
     const all = Matter.Composite.allBodies(engine.world)
@@ -75,18 +76,18 @@ export function startTextMatterWorld(
       const { min, max } = body.bounds
       const bw = max.x - min.x
       const bh = max.y - min.y
-      ctx.fillStyle = 'rgba(8, 10, 18, 0.9)'
-      ctx.strokeStyle = 'rgba(80, 160, 255, 0.88)'
-      ctx.lineWidth = 1
+      ctx.fillStyle = 'rgba(6, 6, 10, 0.94)'
+      ctx.strokeStyle = 'rgba(248, 248, 250, 0.5)'
+      ctx.lineWidth = 1.25
       ctx.beginPath()
       ctx.rect(-bw / 2, -bh / 2, bw, bh)
       ctx.fill()
       ctx.stroke()
-      ctx.fillStyle = '#eef0f6'
-      ctx.font = '600 13px "IBM Plex Mono", ui-monospace, monospace'
+      ctx.fillStyle = '#f6f6f8'
+      ctx.font = '600 23px "IBM Plex Mono", ui-monospace, monospace'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(ch, 0, 1)
+      ctx.fillText(ch, 0, 0)
       ctx.restore()
     }
 

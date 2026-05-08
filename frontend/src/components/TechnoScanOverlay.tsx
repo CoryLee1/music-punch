@@ -18,11 +18,21 @@ const CHROMA_ROWS: [string, string][] = [
   ['#1e60cf', '#1e60cf'],
 ]
 
-/** 示意「文本 → 音乐」假解析层，风格参考 TECHNO_SCAN */
+const GLYPH_TAGS = [
+  { tag: 'GLYPH_LOCK', score: '0.45' },
+  { tag: 'TEMPO_ZONE', score: '0.62' },
+  { tag: 'SPECTRAL_TRACE', score: '0.79' },
+]
+
+const MAX_GLYPHS = 26
+
+/**
+ * 假解析层：无蓝白底的暗色叠层，主体为可扫描的大号字形块（与主线黑白 UI 一致）。
+ */
 export function TechnoScanOverlay({ hint }: { hint?: string }) {
   const [phase, setPhase] = useState(0)
   useEffect(() => {
-    const id = window.setInterval(() => setPhase((p) => p + 1), 420)
+    const id = window.setInterval(() => setPhase((p) => p + 1), 380)
     return () => clearInterval(id)
   }, [])
 
@@ -31,27 +41,20 @@ export function TechnoScanOverlay({ hint }: { hint?: string }) {
     return SCAN_LOG.slice(0, n)
   }, [phase])
 
-  const boxes = useMemo(
-    () =>
-      [0, 1, 2].map((i) => ({
-        id: i,
-        top: `${12 + i * 22}%`,
-        left: `${8 + i * 18}%`,
-        w: `${22 + (i % 2) * 8}%`,
-        h: `${18 + (i % 3) * 5}%`,
-        tag: ['GLYPH_LOCK', 'TEMPO_ZONE', 'SPECTRAL_TRACE'][i],
-        score: (0.45 + i * 0.17).toFixed(2),
-      })),
-    [],
-  )
+  const glyphs = useMemo(() => {
+    if (!hint?.trim()) return ['·']
+    return Array.from(hint.replace(/\r/g, ''))
+      .filter((c) => c !== '\n')
+      .slice(0, MAX_GLYPHS)
+  }, [hint])
 
   return (
     <div
-    className="techno-scan-overlay"
-    role="status"
-    aria-live="polite"
-    onPointerDown={(e) => e.stopPropagation()}
-  >
+      className="techno-scan-overlay"
+      role="status"
+      aria-live="polite"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       <header className="techno-scan-header">
         <div>
           <div className="techno-scan-title">TECHNO_SCAN</div>
@@ -61,24 +64,46 @@ export function TechnoScanOverlay({ hint }: { hint?: string }) {
       </header>
 
       <div className="techno-scan-viewport">
-        <div className="techno-scan-grid" />
-
-        {boxes.map((b) => (
-          <div
-            key={b.id}
-            className="techno-scan-target"
-            style={{
-              top: b.top,
-              left: b.left,
-              width: b.w,
-              height: b.h,
-            }}
-          >
-            <span className="techno-scan-tag">
-              {b.tag} [{b.score}]
+        <div className="techno-scan-glyph-stage">
+          <div className="techno-scan-buffer-row">
+            <span className="techno-scan-buffer-label">BUFFER</span>
+            <span className="techno-scan-buffer-dim">
+              {glyphs.length} glyph{glyphs.length !== 1 ? 's' : ''}
             </span>
           </div>
-        ))}
+
+          <div className="techno-scan-glyph-grid" aria-hidden>
+            {glyphs.map((ch, i) => {
+              const pulse =
+                (phase + i) % 7 < 2 || (phase % glyphs.length === i % glyphs.length)
+              return (
+                <div
+                  key={`${i}-${ch.codePointAt(0) ?? i}`}
+                  className={`techno-glyph-cell${pulse ? ' techno-glyph-cell--pulse' : ''}`}
+                >
+                  <span className="techno-glyph-char">{ch}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="techno-scan-floating-tags">
+            {GLYPH_TAGS.map((g, i) => (
+              <span
+                key={g.tag}
+                className="techno-scan-float-tag"
+                style={{
+                  opacity: 0.35 + ((phase + i) % 6) * 0.1,
+                  transform: `translateX(${Math.sin((phase + i) * 0.2) * 4}px)`,
+                }}
+              >
+                {g.tag} [{g.score}]
+              </span>
+            ))}
+          </div>
+
+          <div className="techno-scan-processing">PROCESSING</div>
+        </div>
 
         <aside className="techno-scan-chromatic">
           <div className="techno-scan-chromatic-title">CHROMATIC_DATA</div>
@@ -91,15 +116,6 @@ export function TechnoScanOverlay({ hint }: { hint?: string }) {
             ))}
           </ul>
         </aside>
-
-        {hint && (
-          <div className="techno-scan-buffer-preview" title="输入缓冲">
-            <span className="techno-scan-buffer-label">BUFFER</span>
-            <p>{hint.length > 120 ? `${hint.slice(0, 120)}…` : hint}</p>
-          </div>
-        )}
-
-        <div className="techno-scan-processing">PROCESSING</div>
 
         <div className="techno-scan-log">
           {visibleLogs.map((line) => (

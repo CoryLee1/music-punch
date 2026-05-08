@@ -210,24 +210,26 @@
   pointer-events: none;
   display: block;
   opacity: 0;
+  image-rendering: crisp-edges;
 }
 
 .gesture-matter-canvas.is-live {
   opacity: 1;
 }
 
-/* TECHNO_SCAN 假解析层（参考用户示意稿） */
+/* TECHNO_SCAN：暗色半透明叠层，主体为大字形块（无蓝白底/无网格） */
 .techno-scan-overlay {
   position: absolute;
   inset: 0;
   z-index: 4;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(160deg, #d8dae2 0%, #c8ccd6 48%, #d2d4dc 100%);
-  color: #1e60cf;
+  background: rgba(2, 2, 5, 0.78);
+  color: rgba(246, 246, 248, 0.95);
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   overflow: hidden;
   box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
 }
 
 .techno-scan-overlay * {
@@ -238,80 +240,128 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 10px 12px 6px;
-  border-bottom: 1px solid rgba(30, 96, 207, 0.35);
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  flex-shrink: 0;
 }
 
 .techno-scan-title {
   font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.06em;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: #f6f6f8;
 }
 
 .techno-scan-sub {
   font-size: 10px;
-  letter-spacing: 0.12em;
-  opacity: 0.85;
-  margin-top: 2px;
+  letter-spacing: 0.1em;
+  opacity: 0.72;
+  margin-top: 3px;
+  color: rgba(246, 246, 248, 0.8);
 }
 
 .techno-scan-version {
   font-size: 9px;
-  padding: 4px 7px;
-  border: 1px solid rgba(30, 96, 207, 0.5);
-  background: rgba(255, 255, 255, 0.35);
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(246, 246, 248, 0.9);
 }
 
 .techno-scan-viewport {
   position: relative;
   flex: 1;
-  min-height: 120px;
+  min-height: 160px;
 }
 
-.techno-scan-grid {
+.techno-scan-glyph-stage {
   position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(30, 96, 207, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(30, 96, 207, 0.12) 1px, transparent 1px);
-  background-size: 14px 14px;
+  left: 8px;
+  right: 138px;
+  top: 50%;
+  transform: translateY(-52%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   pointer-events: none;
 }
 
-.techno-scan-target {
-  position: absolute;
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  outline: 1px solid rgba(30, 96, 207, 0.65);
-  box-shadow: 0 0 0 1px rgba(11, 11, 61, 0.08) inset;
-  pointer-events: none;
+.techno-scan-buffer-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
 }
 
-.techno-scan-target::before,
-.techno-scan-target::after {
-  content: '';
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  background: rgba(30, 96, 207, 0.35);
-}
-.techno-scan-target::before {
-  top: -2px;
-  left: -2px;
-}
-.techno-scan-target::after {
-  bottom: -2px;
-  right: -2px;
+.techno-scan-buffer-label {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: rgba(246, 246, 248, 0.55);
 }
 
-.techno-scan-tag {
-  position: absolute;
-  top: -1.1rem;
-  left: 0;
-  font-size: 8px;
-  color: #fff;
-  background: rgba(30, 96, 207, 0.92);
-  padding: 2px 5px;
+.techno-scan-buffer-dim {
+  font-size: 9px;
+  opacity: 0.5;
+}
+
+.techno-scan-glyph-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 4px;
+}
+
+.techno-glyph-cell {
+  width: 52px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(6, 6, 10, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.techno-glyph-cell--pulse {
+  border-color: rgba(248, 248, 250, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(248, 248, 250, 0.35);
+}
+
+.techno-glyph-char {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fafafd;
+  letter-spacing: 0;
+}
+
+.techno-scan-floating-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 14px;
+  margin-top: 4px;
+}
+
+.techno-scan-float-tag {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  color: #f6f6f8;
+  background: rgba(20, 20, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   white-space: nowrap;
 }
 
@@ -319,18 +369,19 @@
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 132px;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.42);
-  border: 1px solid rgba(30, 96, 207, 0.4);
-  font-size: 8px;
+  width: 122px;
+  padding: 8px 9px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 9px;
 }
 
 .techno-scan-chromatic-title {
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
   letter-spacing: 0.06em;
-  font-size: 8px;
+  font-size: 9px;
+  color: rgba(246, 246, 248, 0.8);
 }
 
 .techno-scan-chromatic ul {
@@ -343,86 +394,60 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
 }
 
 .techno-scan-chromatic code {
-  font-size: 8px;
-  color: #0b0b3d;
+  font-size: 9px;
+  color: rgba(230, 230, 235, 0.92);
 }
 
 .techno-swatch {
-  width: 10px;
-  height: 10px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  width: 11px;
+  height: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   flex-shrink: 0;
 }
 
-.techno-scan-buffer-preview {
-  position: absolute;
-  bottom: 52px;
-  left: 8px;
-  right: 148px;
-  max-height: 48px;
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.45);
-  border: 1px solid rgba(30, 96, 207, 0.35);
-  font-size: 8px;
-  color: #0b0b3d;
-  overflow: hidden;
-}
-
-.techno-scan-buffer-preview p {
-  margin: 2px 0 0;
-  line-height: 1.3;
-  word-break: break-all;
-}
-
-.techno-scan-buffer-label {
-  font-weight: 700;
-  font-size: 7px;
-  letter-spacing: 0.08em;
-  color: #1e60cf;
-}
-
 .techno-scan-processing {
-  position: absolute;
-  top: 42%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  padding: 8px 28px;
-  background: #1e60cf;
-  color: #fff;
-  font-size: 10px;
+  margin-top: 10px;
+  padding: 9px 26px;
+  background: rgba(248, 248, 250, 0.12);
+  color: #f6f6f8;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 4px 12px rgba(11, 11, 61, 0.2);
+  letter-spacing: 0.14em;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  pointer-events: none;
 }
 
 .techno-scan-log {
   position: absolute;
-  bottom: 10px;
+  bottom: 8px;
   left: 8px;
-  font-size: 8px;
-  color: #0b0b3d;
-  line-height: 1.45;
-  max-width: 62%;
+  right: 130px;
+  font-size: 10px;
+  color: rgba(200, 200, 208, 0.88);
+  line-height: 1.5;
+  max-width: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
 .techno-scan-log-line {
-  opacity: 0.92;
+  opacity: 0.95;
+  margin-bottom: 2px;
 }
 
 .techno-scan-footer {
-  padding: 10px 12px;
+  padding: 9px 12px;
   text-align: center;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  background: #1e60cf;
-  color: #fff;
-  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  letter-spacing: 0.16em;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(246, 246, 248, 0.92);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
 }
 
 .app-hint {
