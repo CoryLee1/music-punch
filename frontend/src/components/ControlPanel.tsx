@@ -1,6 +1,136 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, type CSSProperties } from 'react'
 import * as Tone from 'tone'
 import type { GestureHit } from '../lib/handGestures'
+
+/* ───── 手势骨骼 SVG 图标 ───── */
+
+/** 21 个关键点的连接关系 */
+const HAND_CONNS: [number, number][] = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [0,9],[9,10],[10,11],[11,12],
+  [0,13],[13,14],[14,15],[15,16],
+  [0,17],[17,18],[18,19],[19,20],
+  [5,9],[9,13],[13,17],
+]
+
+/** 标准化的手部 21 关键点坐标（归一化 0-1） */
+const HAND_BASE: [number, number][] = [
+  [0.50, 0.92], // 0  wrist
+  [0.60, 0.78], // 1  thumb_cmc
+  [0.68, 0.62], // 2  thumb_mcp
+  [0.74, 0.48], // 3  thumb_ip
+  [0.78, 0.36], // 4  thumb_tip
+  [0.52, 0.56], // 5  index_mcp
+  [0.54, 0.38], // 6  index_pip
+  [0.55, 0.26], // 7  index_dip
+  [0.56, 0.16], // 8  index_tip
+  [0.44, 0.54], // 9  middle_mcp
+  [0.44, 0.34], // 10 middle_pip
+  [0.44, 0.22], // 11 middle_dip
+  [0.44, 0.12], // 12 middle_tip
+  [0.36, 0.56], // 13 ring_mcp
+  [0.34, 0.38], // 14 ring_pip
+  [0.33, 0.26], // 15 ring_dip
+  [0.32, 0.16], // 16 ring_tip
+  [0.28, 0.60], // 17 pinky_mcp
+  [0.24, 0.46], // 18 pinky_pip
+  [0.22, 0.36], // 19 pinky_dip
+  [0.20, 0.28], // 20 pinky_tip
+]
+
+/** PUNCH：握拳 — 所有手指弯曲卷向掌心 */
+const PUNCH_POINTS: [number, number][] = [
+  [0.50, 0.92], // 0  wrist
+  [0.62, 0.78], // 1  thumb_cmc
+  [0.70, 0.66], // 2  thumb_mcp
+  [0.68, 0.56], // 3  thumb_ip
+  [0.62, 0.52], // 4  thumb_tip (收向掌心)
+  [0.52, 0.56], // 5  index_mcp
+  [0.56, 0.46], // 6  index_pip
+  [0.52, 0.44], // 7  index_dip (弯曲)
+  [0.48, 0.48], // 8  index_tip (卷向掌心)
+  [0.44, 0.54], // 9  middle_mcp
+  [0.46, 0.44], // 10 middle_pip
+  [0.42, 0.42], // 11 middle_dip (弯曲)
+  [0.38, 0.46], // 12 middle_tip (卷向掌心)
+  [0.36, 0.56], // 13 ring_mcp
+  [0.36, 0.46], // 14 ring_pip
+  [0.34, 0.44], // 15 ring_dip (弯曲)
+  [0.32, 0.50], // 16 ring_tip (卷向掌心)
+  [0.28, 0.60], // 17 pinky_mcp
+  [0.26, 0.52], // 18 pinky_pip
+  [0.26, 0.50], // 19 pinky_dip (弯曲)
+  [0.28, 0.54], // 20 pinky_tip (卷向掌心)
+]
+
+/** CHOP：刀手 — 手指伸直并拢，手掌侧立 */
+const CHOP_POINTS: [number, number][] = [
+  [0.50, 0.92], // 0  wrist
+  [0.62, 0.78], // 1  thumb_cmc
+  [0.70, 0.64], // 2  thumb_mcp
+  [0.74, 0.52], // 3  thumb_ip
+  [0.72, 0.44], // 4  thumb_tip (微收)
+  [0.50, 0.54], // 5  index_mcp
+  [0.50, 0.38], // 6  index_pip
+  [0.50, 0.26], // 7  index_dip
+  [0.50, 0.14], // 8  index_tip
+  [0.44, 0.53], // 9  middle_mcp
+  [0.43, 0.37], // 10 middle_pip
+  [0.42, 0.25], // 11 middle_dip
+  [0.42, 0.13], // 12 middle_tip
+  [0.38, 0.54], // 13 ring_mcp
+  [0.36, 0.38], // 14 ring_pip
+  [0.35, 0.26], // 15 ring_dip
+  [0.34, 0.14], // 16 ring_tip
+  [0.32, 0.58], // 17 pinky_mcp
+  [0.29, 0.44], // 18 pinky_pip
+  [0.27, 0.34], // 19 pinky_dip
+  [0.26, 0.22], // 20 pinky_tip
+]
+
+/** PALM：张开手掌 — 所有手指完全伸展 */
+const PALM_POINTS: [number, number][] = HAND_BASE
+
+type GestureType = 'punch' | 'chop' | 'palm'
+
+const GESTURE_POINTS: Record<GestureType, [number, number][]> = {
+  punch: PUNCH_POINTS,
+  chop: CHOP_POINTS,
+  palm: PALM_POINTS,
+}
+
+/** 手势骨骼 SVG 组件 */
+function HandIcon({ gesture, size = 64, style }: { gesture: GestureType; size?: number; style?: CSSProperties }) {
+  const pts = GESTURE_POINTS[gesture]
+  const pad = 6
+  const s = size - pad * 2
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={style}>
+      {/* 连接线 */}
+      {HAND_CONNS.map(([a, b], i) => (
+        <line
+          key={i}
+          x1={pad + pts[a][0] * s} y1={pad + pts[a][1] * s}
+          x2={pad + pts[b][0] * s} y2={pad + pts[b][1] * s}
+          stroke="rgba(0, 140, 160, 0.35)"
+          strokeWidth={1.2}
+          strokeLinecap="round"
+        />
+      ))}
+      {/* 关键点 */}
+      {pts.map(([x, y], i) => (
+        <circle
+          key={i}
+          cx={pad + x * s} cy={pad + y * s}
+          r={i === 0 ? 2.5 : (i % 4 === 0 ? 2.2 : 1.6)}
+          fill={i === 0 ? 'rgba(0, 140, 160, 0.8)' : 'rgba(0, 140, 160, 0.6)'}
+        />
+      ))}
+    </svg>
+  )
+}
 
 /* ───── 类型 ───── */
 export type AppPhase = 'idle' | 'loading' | 'active' | 'ending' | 'over'
@@ -230,8 +360,8 @@ function useWaveformVisualizer(phase: AppPhase) {
       const values = analyser.getValue() as Float32Array
       const len = values.length
 
-      // 波形 — 绿色
-      ctx.strokeStyle = 'rgba(0, 189, 214, 0.45)'
+      // 波形
+      ctx.strokeStyle = 'rgba(0, 160, 184, 0.6)'
       ctx.lineWidth = 1
       ctx.beginPath()
       for (let i = 0; i < len; i++) {
@@ -243,7 +373,7 @@ function useWaveformVisualizer(phase: AppPhase) {
       ctx.stroke()
 
       // 中线
-      ctx.strokeStyle = 'rgba(0, 189, 214, 0.08)'
+      ctx.strokeStyle = 'rgba(0, 160, 184, 0.15)'
       ctx.lineWidth = 0.5
       ctx.beginPath()
       ctx.moveTo(0, h / 2)
@@ -330,32 +460,28 @@ export function ControlPanel({
         )}
       </div>
 
-      {/* 手势映射说明 */}
+      {/* 手势映射卡片 */}
       <div className="panel-gesture-map">
-        <div className="gesture-map-row">
-          <span className="gesture-map-key">PUNCH</span>
-          <span className="gesture-map-eq">=</span>
-          <span className="gesture-map-val">DESTROY · 短时加速</span>
+        <div className="gesture-card">
+          <HandIcon gesture="punch" size={56} />
+          <div className="gesture-card-info">
+            <span className="gesture-card-name">PUNCH</span>
+            <span className="gesture-card-desc">DESTROY · 短时加速</span>
+          </div>
         </div>
-        <div className="gesture-map-row">
-          <span className="gesture-map-key">GRAB</span>
-          <span className="gesture-map-eq">=</span>
-          <span className="gesture-map-val">CRUSH · 五指收拢</span>
+        <div className="gesture-card">
+          <HandIcon gesture="chop" size={56} />
+          <div className="gesture-card-info">
+            <span className="gesture-card-name">CHOP</span>
+            <span className="gesture-card-desc">SLASH · 刀手快划</span>
+          </div>
         </div>
-        <div className="gesture-map-row">
-          <span className="gesture-map-key">CHOP</span>
-          <span className="gesture-map-eq">=</span>
-          <span className="gesture-map-val">SLASH · 刀手快划</span>
-        </div>
-        <div className="gesture-map-row">
-          <span className="gesture-map-key">PINCH</span>
-          <span className="gesture-map-eq">=</span>
-          <span className="gesture-map-val">变速 · 拇食指距离</span>
-        </div>
-        <div className="gesture-map-row">
-          <span className="gesture-map-key">PALM</span>
-          <span className="gesture-map-eq">=</span>
-          <span className="gesture-map-val">音高 · 手掌开合</span>
+        <div className="gesture-card">
+          <HandIcon gesture="palm" size={56} />
+          <div className="gesture-card-info">
+            <span className="gesture-card-name">PALM</span>
+            <span className="gesture-card-desc">音高 · 手掌开合</span>
+          </div>
         </div>
       </div>
 

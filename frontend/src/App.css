@@ -1,12 +1,13 @@
 /* ========== 全局布局 ========== */
 .app {
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
   overflow: hidden;
   position: relative;
+  border-radius: 18px;
 }
 
 /* ========== 顶部区域（主内容：左2/3 + 右1/3） ========== */
@@ -24,7 +25,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-right: 1px solid var(--border-color);
   overflow: hidden;
   background: var(--bg-primary);
 }
@@ -147,13 +147,14 @@
   75% { content: '...'; }
 }
 
-/* --- 右侧控制面板（缩窄） --- */
+/* --- 右侧控制面板 · 浅白色平面 --- */
 .app-panel {
   flex: 0 0 280px;
   width: 280px;
   display: flex;
   flex-direction: column;
   background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
   overflow-y: auto;
 }
 
@@ -180,7 +181,7 @@
 }
 
 .panel-status.connected {
-  color: rgba(0, 189, 214, 0.7);
+  color: rgba(0, 160, 184, 0.8);
 }
 
 /* 摄像头预览 + HUD */
@@ -189,10 +190,11 @@
   width: calc(100% - 24px);
   margin: 10px auto;
   aspect-ratio: 16 / 9;
-  background: #1c1713;
-  border: 1px solid var(--border-color);
-  border-radius: 2px;
+  background: #2a2a2a;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .panel-camera video {
@@ -200,7 +202,7 @@
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1);
-  opacity: 0.75;
+  opacity: 0.85;
   filter: grayscale(1) contrast(1.1);
 }
 
@@ -231,36 +233,52 @@
   text-transform: uppercase;
 }
 
-/* 手势映射说明 */
+/* 手势映射卡片 */
 .panel-gesture-map {
-  padding: 10px 14px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  background: rgba(0, 189, 214, 0.02);
+  gap: 6px;
 }
 
-.gesture-map-row {
+.gesture-card {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  transition: background 0.15s ease;
+}
+
+.gesture-card:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.gesture-card svg {
+  flex-shrink: 0;
+}
+
+.gesture-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gesture-card-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: rgba(0, 140, 160, 0.85);
+}
+
+.gesture-card-desc {
   font-size: 9px;
-  letter-spacing: 0.08em;
-}
-
-.gesture-map-key {
-  color: rgba(0, 189, 214, 0.55);
-  min-width: 48px;
-}
-
-.gesture-map-eq {
-  color: var(--text-muted);
-}
-
-.gesture-map-val {
+  letter-spacing: 0.06em;
   color: var(--text-secondary);
-  flex: 1;
 }
 
 /* 手势事件横幅 */
@@ -270,7 +288,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(0, 189, 214, 0.04);
+  background: rgba(0, 160, 184, 0.05);
 }
 
 .gesture-banner-label {
@@ -284,7 +302,7 @@
 .gesture-banner-value {
   font-size: 10px;
   letter-spacing: 0.06em;
-  color: rgba(0, 189, 214, 0.8);
+  color: rgba(0, 160, 184, 0.9);
   font-weight: 500;
 }
 
@@ -367,12 +385,12 @@
 }
 
 .control-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.2);
 }
 
 .control-btn:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .control-btn:disabled {
@@ -381,18 +399,18 @@
 }
 
 .control-btn.primary {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .control-btn.danger {
-  border-color: rgba(220, 60, 60, 0.5);
-  color: rgba(220, 100, 100, 0.9);
+  border-color: rgba(200, 50, 50, 0.4);
+  color: rgba(180, 50, 50, 0.9);
 }
 
 .control-btn.danger:hover {
-  background: rgba(220, 60, 60, 0.1);
-  border-color: rgba(220, 60, 60, 0.7);
-  color: rgba(255, 120, 120, 1);
+  background: rgba(200, 50, 50, 0.06);
+  border-color: rgba(200, 50, 50, 0.6);
+  color: rgba(180, 40, 40, 1);
 }
 
 /* 倒计时 */
@@ -419,7 +437,7 @@
 }
 
 .timer-display.warning {
-  color: rgba(255, 100, 100, 0.85);
+  color: rgba(200, 50, 50, 0.85);
   animation: timer-pulse 0.5s ease-in-out infinite alternate;
 }
 
@@ -511,8 +529,8 @@
 }
 
 .input-submit:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.25);
 }
 
 .input-submit:disabled {
@@ -527,7 +545,7 @@
   left: 12px;
   z-index: 100;
   font-size: 10px;
-  color: rgba(255, 100, 100, 0.8);
+  color: rgba(200, 50, 50, 0.8);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -537,8 +555,8 @@
 .app-errors p {
   margin: 0;
   padding: 6px 12px;
-  background: rgba(255, 50, 50, 0.08);
-  border: 1px solid rgba(255, 50, 50, 0.15);
+  background: rgba(200, 50, 50, 0.06);
+  border: 1px solid rgba(200, 50, 50, 0.12);
   border-radius: 2px;
 }
 

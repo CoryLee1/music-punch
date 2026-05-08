@@ -26,9 +26,11 @@ const INDEX = 8
 
 /* ───── 视觉常量 ───── */
 const GLYPHS = '○◎□⊠×+✦·—/⊕◇⊹∴Δ⟨⟩'
-const GRID_ALPHA = 0.03
-/** 品牌色 RGB */
-const B = '0, 189, 214'
+const GRID_ALPHA = 0.06
+/** 品牌色 RGB（浅底适配） */
+const B = '0, 140, 160'
+/** 深色文字 RGB */
+const T = '0, 0, 0'
 
 /* ───── 工具函数 ───── */
 function pseudoNoise(i: number, j: number, t: number) {
@@ -53,9 +55,9 @@ type LM = { x: number; y: number }
    绘制函数 — 全部使用品牌色 rgba(0, 189, 214, α)
    ═══════════════════════════════════════════════════ */
 
-/** 绘制深色背景 + 网格 */
+/** 绘制浅色背景 + 网格 */
 function drawBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  ctx.fillStyle = '#241e18'
+  ctx.fillStyle = '#d1d1d1'
   ctx.fillRect(0, 0, w, h)
 
   ctx.strokeStyle = `rgba(${B}, ${GRID_ALPHA})`
@@ -77,7 +79,7 @@ function drawFloatingGlyphs(ctx: CanvasRenderingContext2D, w: number, h: number,
   for (let i = 0; i < 50; i++) {
     const nx = Math.abs(pseudoNoise(i * 0.17 + t, i * 0.03, 0))
     const ny = Math.abs(pseudoNoise(i * 0.19 + 40, i * 0.07 + t, 1))
-    ctx.fillStyle = `rgba(${B}, ${0.04 + (i % 5) * 0.012})`
+    ctx.fillStyle = `rgba(${B}, ${0.06 + (i % 5) * 0.018})`
     ctx.fillText(GLYPHS.charAt(i % GLYPHS.length), nx * w, ny * h)
   }
 }
@@ -86,14 +88,14 @@ function drawFloatingGlyphs(ctx: CanvasRenderingContext2D, w: number, h: number,
 function drawIdleRing(ctx: CanvasRenderingContext2D, w: number, h: number, frame: number) {
   const cx = w / 2, cy = h / 2
   const r = 80 + Math.sin(frame * 0.015) * 6
-  ctx.strokeStyle = `rgba(${B}, 0.15)`
+  ctx.strokeStyle = `rgba(${B}, 0.25)`
   ctx.lineWidth = 0.8
   ctx.setLineDash([4, 8])
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke()
   ctx.setLineDash([])
 
   const cr = 10
-  ctx.strokeStyle = `rgba(${B}, 0.1)`
+  ctx.strokeStyle = `rgba(${B}, 0.15)`
   ctx.lineWidth = 0.5
   ctx.beginPath()
   ctx.moveTo(cx - cr, cy); ctx.lineTo(cx + cr, cy)
@@ -104,7 +106,7 @@ function drawIdleRing(ctx: CanvasRenderingContext2D, w: number, h: number, frame
 /** 系统头部信息 */
 function drawSystemInfo(ctx: CanvasRenderingContext2D, phase: AppPhase, emotion: string, elapsed: number) {
   ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${B}, 0.25)`
+  ctx.fillStyle = `rgba(${T}, 0.25)`
   ctx.textBaseline = 'top'
   ctx.fillText(`// PHASE: ${phase.toUpperCase()}`, 16, 16)
   if (emotion) ctx.fillText(`// EMOTION: "${emotion.slice(0, 30)}"`, 16, 32)
@@ -118,7 +120,7 @@ function drawSystemInfo(ctx: CanvasRenderingContext2D, phase: AppPhase, emotion:
 
 /** 手部骨架绘制（镜像 x 坐标，与摄像头预览方向一致） */
 function drawHandSkeleton(ctx: CanvasRenderingContext2D, landmarks: LM[], w: number, h: number) {
-  ctx.fillStyle = `rgba(${B}, 0.6)`
+  ctx.fillStyle = `rgba(${B}, 0.75)`
   for (const p of landmarks) {
     ctx.beginPath(); ctx.arc((1 - p.x) * w, p.y * h, 2.5, 0, Math.PI * 2); ctx.fill()
   }
@@ -131,7 +133,7 @@ function drawHandSkeleton(ctx: CanvasRenderingContext2D, landmarks: LM[], w: num
     [0,17],[17,18],[18,19],[19,20],
     [5,9],[9,13],[13,17],
   ]
-  ctx.strokeStyle = `rgba(${B}, 0.3)`
+  ctx.strokeStyle = `rgba(${B}, 0.4)`
   ctx.lineWidth = 0.8
   for (const [a, b] of connections) {
     if (a < landmarks.length && b < landmarks.length) {
@@ -150,17 +152,17 @@ function drawPinchConstruct(ctx: CanvasRenderingContext2D, thumb: LM, idx: LM, r
   const mx = (tx + ix) / 2, my = (ty + iy) / 2
 
   // 连线
-  ctx.strokeStyle = `rgba(${B}, 0.4)`
+  ctx.strokeStyle = `rgba(${B}, 0.5)`
   ctx.lineWidth = 0.6
   ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(ix, iy); ctx.stroke()
 
   // 中心半径圆
-  ctx.strokeStyle = `rgba(${B}, 0.18)`
+  ctx.strokeStyle = `rgba(${B}, 0.25)`
   ctx.lineWidth = 0.4
   ctx.beginPath(); ctx.arc(mx, my, radius / 2, 0, Math.PI * 2); ctx.stroke()
 
   // 中心到画布中心的辅助线
-  ctx.strokeStyle = `rgba(${B}, 0.12)`
+  ctx.strokeStyle = `rgba(${B}, 0.15)`
   ctx.lineWidth = 0.3
   ctx.beginPath(); ctx.moveTo(w / 2, h / 2); ctx.lineTo(mx, my); ctx.stroke()
 }
@@ -176,10 +178,10 @@ function drawGestureCue(ctx: CanvasRenderingContext2D, w: number, cue: { labelZh
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   const y = 96
-  ctx.fillStyle = `rgba(${B}, ${0.15 + 0.55 * fade})`
+  ctx.fillStyle = `rgba(${B}, ${0.25 + 0.6 * fade})`
   ctx.fillText(`// GESTURE · ${cue.labelZh}  /  ${cue.labelEn}`, w / 2, y)
   ctx.lineWidth = 0.6
-  ctx.strokeStyle = `rgba(${B}, ${0.25 + 0.45 * fade})`
+  ctx.strokeStyle = `rgba(${B}, ${0.3 + 0.5 * fade})`
   ctx.strokeRect(w / 2 - 158, y - 6, 316, 26)
   ctx.restore()
 }
@@ -195,16 +197,16 @@ function drawDataHUD(
   const cy = (thumb.y * h + idx.y * h) / 2
 
   ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${B}, 0.7)`
+  ctx.fillStyle = `rgba(${B}, 0.8)`
   ctx.fillText(`POS X:${nf(cx, 0)} Y:${nf(cy, 0)}`, cx + 12, cy - 6)
   ctx.fillText(`PINCH_R: ${nf(radius, 1)}`, cx + 12, cy + 8)
 
   // 底部面板
-  ctx.strokeStyle = `rgba(${B}, 0.2)`
+  ctx.strokeStyle = `rgba(${B}, 0.25)`
   ctx.lineWidth = 0.55
   ctx.strokeRect(10, h - 88, 280, 76)
 
-  ctx.fillStyle = `rgba(${B}, 0.55)`
+  ctx.fillStyle = `rgba(${T}, 0.5)`
   ctx.fillText('// TRACE · GESTURE_CONTROLLER', 18, h - 72)
   ctx.fillText(`RADIUS        ${nf(radius, 1)} px`, 18, h - 56)
   ctx.fillText(`PINCH_RATE    ${nf(playbackRate, 2)}`, 18, h - 42)
@@ -218,32 +220,32 @@ function drawLoadingState(ctx: CanvasRenderingContext2D, w: number, h: number, f
   const angle = frame * 0.04
   const r = 55
 
-  ctx.strokeStyle = `rgba(${B}, 0.1)`; ctx.lineWidth = 1
+  ctx.strokeStyle = `rgba(${B}, 0.15)`; ctx.lineWidth = 1
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke()
 
-  ctx.strokeStyle = `rgba(${B}, 0.55)`; ctx.lineWidth = 1.5
+  ctx.strokeStyle = `rgba(${B}, 0.65)`; ctx.lineWidth = 1.5
   ctx.beginPath(); ctx.arc(cx, cy, r, angle, angle + Math.PI * 0.6); ctx.stroke()
 
   const r2 = 35
-  ctx.strokeStyle = `rgba(${B}, 0.06)`; ctx.lineWidth = 0.5
+  ctx.strokeStyle = `rgba(${B}, 0.1)`; ctx.lineWidth = 0.5
   ctx.beginPath(); ctx.arc(cx, cy, r2, 0, Math.PI * 2); ctx.stroke()
 
-  ctx.strokeStyle = `rgba(${B}, 0.35)`; ctx.lineWidth = 1
+  ctx.strokeStyle = `rgba(${B}, 0.45)`; ctx.lineWidth = 1
   ctx.beginPath(); ctx.arc(cx, cy, r2, -angle * 0.7, -angle * 0.7 + Math.PI * 0.4); ctx.stroke()
 
   ctx.font = '11px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${B}, 0.45)`
+  ctx.fillStyle = `rgba(${B}, 0.6)`
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
   ctx.fillText('PARSING EMOTION', cx, cy - 80)
 
   ctx.font = '13px "Space Mono", monospace'
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
+  ctx.fillStyle = `rgba(${T}, 0.7)`
   const displayEmotion = emotion.length > 24 ? emotion.slice(0, 24) + '…' : emotion
   ctx.fillText(`"${displayEmotion}"`, cx, cy + 80)
 
   const dots = '.'.repeat(Math.floor(frame / 20) % 4)
   ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${B}, 0.3)`
+  ctx.fillStyle = `rgba(${T}, 0.35)`
   ctx.fillText(`GENERATING${dots}`, cx, cy + 105)
 
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
@@ -252,7 +254,7 @@ function drawLoadingState(ctx: CanvasRenderingContext2D, w: number, h: number, f
 /** 底部提示文字 */
 function drawBottomHint(ctx: CanvasRenderingContext2D, w: number, h: number, text: string) {
   ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${B}, 0.2)`
+  ctx.fillStyle = `rgba(${T}, 0.2)`
   ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'
   ctx.fillText(text, w / 2, h - 16)
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
@@ -261,7 +263,7 @@ function drawBottomHint(ctx: CanvasRenderingContext2D, w: number, h: number, tex
 /** 无手势时的提示 */
 function drawSignalNull(ctx: CanvasRenderingContext2D, h: number) {
   ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${B}, 0.3)`
+  ctx.fillStyle = `rgba(${T}, 0.3)`
   ctx.fillText('// SIGNAL: NULL · SHOW HANDS TO CAMERA', 14, h - 18)
 }
 
@@ -278,8 +280,8 @@ function drawPunchOver(
   progress: number, flicker: boolean, fade: boolean, fadeProgress: number,
 ) {
   ctx.save()
-  const bgAlpha = fade ? Math.max(0, 1 - fadeProgress) : 1
-  ctx.fillStyle = `rgba(0, 0, 0, ${bgAlpha})`
+  const bgAlpha = fade ? Math.max(0, 0.92 * (1 - fadeProgress)) : 0.92
+  ctx.fillStyle = `rgba(209, 209, 209, ${bgAlpha})`
   ctx.fillRect(0, 0, w, h)
 
   const scaleT = Math.min(progress / 0.08, 1)
@@ -294,7 +296,7 @@ function drawPunchOver(
   ctx.scale(scale, scale)
   const fontSize = Math.min(w * 0.12, 120)
   ctx.font = `700 ${fontSize}px "Space Mono", "IBM Plex Mono", monospace`
-  ctx.fillStyle = `rgba(255, 255, 255, ${textAlpha * 0.9})`
+  ctx.fillStyle = `rgba(0, 0, 0, ${textAlpha * 0.85})`
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
   ctx.fillText('PUNCH OVER', 0, 0)
   ctx.restore()
