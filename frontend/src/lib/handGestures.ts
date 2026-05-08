@@ -53,29 +53,12 @@ export function openness(lm: HandLM[]): number {
   return s / 5
 }
 
-/**
- * 手掌张开度 → 对 pinch 变速的乘法因子：拢手偏低、张开偏高（连续 pitch 感）。
- * `o` 为 {@link openness} 取值；`lo`/`hi` 可按摄像头距离微调。
- */
-export function palmPitchFactorFromOpenness(
-  o: number,
-  lo = 0.08,
-  hi = 0.23,
-): number {
-  const minMul = 0.72
-  const maxMul = 1.32
-  if (o <= lo) return minMul
-  if (o >= hi) return maxMul
-  const t = (o - lo) / (hi - lo)
-  return minMul + t * (maxMul - minMul)
-}
-
 /** 指尖是否相对指节“伸直”（相对腕部更远） */
 function fingerExtended(lm: HandLM[], tip: number, pip: number): boolean {
   const wrist = lm[WRIST]
   const dt = dist(lm[tip], wrist)
   const dp = dist(lm[pip], wrist)
-  return dt > dp * 1.035
+  return dt > dp * 1.022
 }
 
 /** 五指伸直数量（含拇指简化判据） */
@@ -94,7 +77,7 @@ export function countExtendedFingers(lm: HandLM[]): number {
 export function isFistLike(lm: HandLM[]): boolean {
   const ext = countExtendedFingers(lm)
   const o = openness(lm)
-  return ext <= 2 && o < 0.168
+  return ext <= 3 && o < 0.195
 }
 
 /** 四指指尖共线程度（越小越像一条“刃”），用于刀手 */
@@ -123,15 +106,22 @@ function tipsLineDeviation(lm: HandLM[]): number {
   return dev / 4
 }
 
+/** 四指尖共线：再放宽一档，CHOP 更容易成立 */
+const CHOP_LINE_DEV_MAX = 0.078
+
 /** 刀手姿态：多指伸直 + 四指尖近似一线 + 张开度中等 */
 export function chopPoseScore(lm: HandLM[]): number {
   const ext = countExtendedFingers(lm)
-  if (ext < 3) return 0
+  if (ext < 2) return 0
   const dev = tipsLineDeviation(lm)
   const o = openness(lm)
-  if (o < 0.08 || o > 0.34) return 0
-  if (dev > 0.045) return 0
-  return Math.min(1, (0.045 - dev) / 0.045) * Math.min(1, (ext - 2) / 2)
+  if (o < 0.043 || o > 0.44) return 0
+  if (ext < 3 && dev > 0.046) return 0
+  if (dev > CHOP_LINE_DEV_MAX) return 0
+  const lineQ = Math.min(1, (CHOP_LINE_DEV_MAX - dev) / CHOP_LINE_DEV_MAX)
+  const extQ =
+    ext >= 3 ? Math.min(1, (ext - 2) / 2) : Math.min(1, (ext - 1) / 2) * 0.72
+  return lineQ * extQ
 }
 
 type FrameSample = {
@@ -144,8 +134,9 @@ type FrameSample = {
   fist: boolean
 }
 
-const HISTORY_MAX = 28
-const COOLDOWN_MS = 520
+const HISTORY_MAX = 24
+/** 略短冷却，CHOP/PUNCH 连做时更跟手 */
+const COOLDOWN_MS = 275
 
 /**
  * 基于短序列与简单运动学触发三种离散事件；带冷却避免连发。
@@ -178,15 +169,16 @@ export class GestureEventDetector {
     if (this.history.length > HISTORY_MAX) this.history.shift()
 
     if (nowMs - this.lastEmitAt < COOLDOWN_MS) return null
-    if (this.history.length < 6) return null
+    if (this.history.length < 4) return null
 
+    /** 击打玩法优先：先判拳/刀手，避免「张→收」被 grab 抢走 */
     const hit =
-      this.tryGrab() ?? this.tryPunch() ?? this.tryChop()
+      this.tryPunch() ?? this.tryChop() ?? this.tryGrab()
     if (hit) this.lastEmitAt = nowMs
     return hit
   }
 
-  /** 抓：此前窗口曾张开，当前收拢（阈值放宽以提高灵敏度） */
+  /** 抓：明确「先张得比较开」再收拢；收紧以减少与冲拳抢判 */
   private tryGrab(): GestureHit | null {
     const h = this.history
     if (h.length < 9) return null
@@ -198,49 +190,67 @@ export class GestureEventDetector {
     const maxExt = Math.max(...past.map((f) => f.ext))
     const drop = maxO - cur.openness
     if (
-      maxExt >= 2 &&
-      maxO > 0.118 &&
-      drop > 0.018 &&
-      cur.ext <= 3 &&
-      cur.openness < 0.18
+      maxExt >= 3 &&
+      maxO > 0.128 &&
+      drop > 0.026 &&
+      cur.ext <= 2 &&
+      cur.openness < 0.165
     ) {
       return hitFromSignal('grab')
     }
     return null
   }
 
-  /** 冲拳： mostly握拳 + 手掌跨度缩短（近→远）或“先大后小”轨迹 */
+  /** 冲拳：较短窗口 + 与刀手姿态互斥，降低延迟与误判 */
   private tryPunch(): GestureHit | null {
     const h = this.history
-    if (h.length < 7) return null
-    const last = h.slice(-8)
-    if (last.length < 8) return null
+    if (h.length < 6) return null
+    const last = h.slice(-6)
+    if (last.length < 6) return null
 
     const fistCount = last.filter((f) => f.fist).length
-    if (fistCount < 6) return null
+    /** 提高「整段像拳」比例，减轻误触 PUNCH */
+    if (fistCount < 5) return null
+
+    const tail = last[last.length - 1]!
+    const chopAvg =
+      last.reduce((s, f) => s + f.chop, 0) / last.length
+    /** 更像刀手时优先让给 CHOP（略收紧，减轻误拳） */
+    if (tail.chop > 0.15 || chopAvg > 0.095) return null
 
     const span0 = last[0].span
-    const span1 = last[last.length - 1].span
-    if (span0 <= 0.032) return null
+    const span1 = tail.span
+    if (span0 <= 0.025) return null
 
     const ratio = span1 / span0
     const mid = last[Math.floor(last.length / 2)].span
     const valley =
-      mid < span0 * 0.96 &&
-      span1 < span0 * 0.94 &&
-      span0 - Math.min(mid, span1) > span0 * 0.04
+      mid < span0 * 0.98 &&
+      span1 < span0 * 0.93 &&
+      span0 - Math.min(mid, span1) > span0 * 0.035
 
-    if (ratio < 0.93 || valley) return hitFromSignal('punch')
+    /** 需更明显收回或更深的「谷形」 */
+    const sharpShrink = ratio < 0.936
+    if (sharpShrink || valley) return hitFromSignal('punch')
     return null
   }
 
-  /** 切：刀手 + 腕部快速划动 */
+  /** 切：较短窗口 + 排除「大半程握拳」的误触 */
   private tryChop(): GestureHit | null {
     const h = this.history
-    const win = h.slice(-8)
-    if (win.length < 8) return null
-    const chopOk = win.filter((f) => f.chop > 0.28).length >= 4
-    if (!chopOk) return null
+    if (h.length < 6) return null
+    const win = h.slice(-6)
+    if (win.length < 6) return null
+
+    /** 整窗「像拳」不超过 4 帧才允许 CHOP（与 PUNCH 五拳窗错开） */
+    if (win.filter((f) => f.fist).length > 4) return null
+
+    const chopStrongMin = 0.12
+    const chopLooseMin = 0.065
+    const chopStrong = win.filter((f) => f.chop > chopStrongMin).length
+    const chopLoose = win.filter((f) => f.chop > chopLooseMin).length
+    /** 有一段刀手分 + 至少两帧弱刀手，或一帧强刀手即可 */
+    if (chopStrong < 1 && chopLoose < 2) return null
 
     let maxStep = 0
     for (let i = 1; i < win.length; i++) {
@@ -253,7 +263,22 @@ export class GestureEventDetector {
         win[win.length - 1].wrist.x - win[0].wrist.x,
         win[win.length - 1].wrist.y - win[0].wrist.y,
       ) || 0
-    if (maxStep > 0.0085 && span > 0.038) return hitFromSignal('chop')
+
+    const tail = win.slice(-3)
+    let peakStep = 0
+    for (let i = 1; i < tail.length; i++) {
+      const dx = tail[i].wrist.x - tail[i - 1].wrist.x
+      const dy = tail[i].wrist.y - tail[i - 1].wrist.y
+      peakStep = Math.max(peakStep, Math.hypot(dx, dy))
+    }
+
+    if (
+      maxStep > 0.004 &&
+      span > 0.0135 &&
+      (peakStep > 0.0032 || maxStep > 0.0052)
+    ) {
+      return hitFromSignal('chop')
+    }
     return null
   }
 }

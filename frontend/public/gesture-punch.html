@@ -1,0 +1,217 @@
+<!--
+  PUNCH 手势提示组件 — 拳头从远处冲过来 + 光圈 + 冲击闪
+  ─────────────────────────────────────────────────────
+  直接嵌入方式：把 <div class="gesture-hint-punch"> ... </div> 整块
+  以及 <script> 内的 JS 复制到你的 HTML 中即可。
+
+  可配置项（通过 GestureHintRenderer 第三个参数）：
+    size          — canvas 逻辑尺寸（px），默认 48
+    cycleDuration — 一轮动画时长（ms），默认 2400
+-->
+<div class="gesture-hint-punch" style="display:inline-flex;align-items:center;gap:8px;">
+  <canvas id="gh-punch-canvas" width="48" height="48" style="display:block;"></canvas>
+  <span style="font-family:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;font-size:12px;letter-spacing:.03em;color:rgba(255,255,255,.52);white-space:nowrap;">PUNCH</span>
+</div>
+
+<script>
+/* ============================================================
+ *  PUNCH 手势提示 — 零依赖 · 可嵌入任何 HTML
+ * ============================================================ */
+(function () {
+  'use strict';
+
+  var FILL_COLOR = 'rgba(238,238,242,0.92)';
+  var BG_COLOR   = '#0a0a0c';
+
+  // ---- helper: filled rounded rect ----
+  function _rr(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ── 拳头绘制 ── 正面怼过来视角 (👊)
+  function drawFist(ctx, s) {
+    ctx.fillStyle = FILL_COLOR;
+
+    var bodyW = s * 0.58, bodyH = s * 0.34;
+    var kr = s * 0.092, spacing = bodyW / 4;
+    var x0 = -bodyW / 2 + spacing / 2;
+    var topY = -bodyH / 2, botY = bodyH / 2;
+
+    // 拳体
+    _rr(ctx, -bodyW / 2, topY + kr * 0.35, bodyW, bodyH, s * 0.04);
+
+    // 4 指节凸起
+    for (var i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(x0 + i * spacing, topY + kr * 0.15, kr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 4 蜷曲指尖
+    var tipR = s * 0.065;
+    for (var i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(x0 + i * spacing, botY + kr * 0.25, tipR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 拇指
+    ctx.save();
+    ctx.translate(bodyW / 2 + s * 0.01, s * 0.04);
+    ctx.rotate(0.12);
+    _rr(ctx, 0, -s * 0.10, s * 0.10, s * 0.22, s * 0.045);
+    ctx.restore();
+
+    // 指缝 + 拇指间隙（背景色剪裁）
+    ctx.fillStyle = BG_COLOR;
+    var grooveW = s * 0.024;
+    for (var j = 0; j < 3; j++) {
+      var gx = x0 + (j + 0.5) * spacing;
+      var gy1 = topY - kr * 0.15, gy2 = botY + tipR * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(gx - grooveW, gy1);
+      ctx.lineTo(gx - grooveW, gy2 - grooveW * 1.2);
+      ctx.quadraticCurveTo(gx, gy2 + grooveW * 0.6, gx + grooveW, gy2 - grooveW * 1.2);
+      ctx.lineTo(gx + grooveW, gy1);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.ellipse(bodyW / 2 + s * 0.005, s * 0.04, s * 0.014, s * 0.09, 0.12, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ── 渲染器 ──
+  function GestureHintRenderer(canvas, opts) {
+    opts = opts || {};
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.size = opts.size || 48;
+    this.cycleDuration = opts.cycleDuration || 2400;
+    this.raf = 0;
+    this.startTime = 0;
+
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = this.size * dpr;
+    canvas.height = this.size * dpr;
+    canvas.style.width = this.size + 'px';
+    canvas.style.height = this.size + 'px';
+    this.dpr = dpr;
+  }
+
+  GestureHintRenderer.prototype.start = function () {
+    this.startTime = performance.now();
+    var self = this;
+    (function loop() { self._draw(); self.raf = requestAnimationFrame(loop); })();
+  };
+  GestureHintRenderer.prototype.stop = function () { cancelAnimationFrame(this.raf); };
+
+  // easing
+  function eio(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+  function eob(t) { var c = 2.2; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); }
+
+  // 冲击闪
+  function impact(ctx, cx, cy, p, s) {
+    if (p < 0 || p > 1) return;
+    var a = 0.5 * (1 - p);
+    ctx.strokeStyle = 'rgba(255,255,255,' + a.toFixed(3) + ')';
+    ctx.lineWidth = Math.max(1, s * 0.014);
+    ctx.lineCap = 'round';
+    var count = 6;
+    var rInner = s * 0.04 + p * s * 0.08;
+    var rOuter = rInner + s * 0.06 + p * s * 0.10;
+    for (var i = 0; i < count; i++) {
+      var ang = Math.PI * 2 * i / count + p * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * rInner, cy + Math.sin(ang) * rInner);
+      ctx.lineTo(cx + Math.cos(ang) * rOuter, cy + Math.sin(ang) * rOuter);
+      ctx.stroke();
+    }
+  }
+
+  // ── 动画主循环 ──
+  GestureHintRenderer.prototype._draw = function () {
+    var ctx = this.ctx, dpr = this.dpr, s = this.size;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, s, s);
+
+    var t = ((performance.now() - this.startTime) % this.cycleDuration) / this.cycleDuration;
+
+    var cx = s * 0.50, cy = s * 0.50;
+    var scMin = 0.35, scMax = 1.10;
+    var sc, ga, ip, sx;
+
+    if (t < 0.12) {
+      var p = t / 0.12;
+      sc = scMin + Math.sin(p * Math.PI) * 0.03;
+      ga = 0.25 + Math.sin(p * Math.PI) * 0.10;
+      ip = -1; sx = 0;
+    } else if (t < 0.42) {
+      var p = eob(Math.min(1, (t - 0.12) / 0.30));
+      sc = scMin + (scMax - scMin) * p;
+      ga = 0.25 + p * 0.55;
+      ip = -1; sx = 0;
+    } else if (t < 0.58) {
+      var p = (t - 0.42) / 0.16;
+      sc = scMax - p * 0.08;
+      ga = 0.80 * (1 - p * 0.6);
+      ip = p;
+      sx = Math.sin(p * Math.PI * 8) * s * 0.012 * (1 - p);
+    } else if (t < 0.78) {
+      var p = eio((t - 0.58) / 0.20);
+      sc = (scMax - 0.08) + (scMin - (scMax - 0.08)) * p;
+      ga = 0.20 * (1 - p);
+      ip = -1; sx = 0;
+    } else {
+      sc = scMin; ga = 0; ip = -1; sx = 0;
+    }
+
+    // 光圈
+    if (ga > 0.01) {
+      var ringR = s * 0.22 * sc;
+      ctx.save();
+      ctx.globalAlpha = ga * 0.35;
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringR + s * 0.06, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,1)';
+      ctx.lineWidth = Math.max(1, s * 0.025);
+      ctx.stroke();
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = ga * 0.65;
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,1)';
+      ctx.lineWidth = Math.max(1, s * 0.016);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 冲击闪
+    if (ip >= 0) impact(ctx, cx, cy, ip, s);
+
+    // 拳头
+    ctx.save();
+    ctx.translate(cx + sx, cy);
+    ctx.scale(sc, sc);
+    drawFist(ctx, s * 0.55);
+    ctx.restore();
+  };
+
+  // ── 自动启动 ──
+  var canvas = document.getElementById('gh-punch-canvas');
+  if (canvas) new GestureHintRenderer(canvas, { size: 48 }).start();
+})();
+</script>
