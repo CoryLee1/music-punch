@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
-import { createRobustHandLandmarker } from '../lib/mediapipeHandLandmarker'
+import { createRobustHandLandmarker, releaseRobustHandLandmarker } from '../lib/mediapipeHandLandmarker'
 import {
   GestureEventDetector,
   pickPrimaryHand,
@@ -71,7 +71,7 @@ export function SmashEasterEgg({ cameraStream = null }: SmashEasterEggProps) {
 
   const handleClick = useCallback(() => triggerHit(), [triggerHit])
 
-  // 加载 MediaPipe 手部模型
+  // 加载 MediaPipe 手部模型（全局单例，卸载时递减引用）
   useEffect(() => {
     mountedRef.current = true
     let cancelled = false
@@ -79,7 +79,7 @@ export function SmashEasterEgg({ cameraStream = null }: SmashEasterEggProps) {
     void (async () => {
       try {
         const landmarker = await createRobustHandLandmarker()
-        if (cancelled) { landmarker.close(); return }
+        if (cancelled) return          // 单例不需要手动 close
         landmarkerRef.current = landmarker
         if (!cancelled) setGestureStatus(cameraStream ? 'ready' : 'loading')
       } catch {
@@ -90,8 +90,8 @@ export function SmashEasterEgg({ cameraStream = null }: SmashEasterEggProps) {
     return () => {
       cancelled = true
       mountedRef.current = false
-      landmarkerRef.current?.close()
-      landmarkerRef.current = null
+      landmarkerRef.current = null     // 清引用但不 close（单例管理）
+      releaseRobustHandLandmarker()    // 递减引用计数
       gestureDetectorRef.current.reset()
     }
   }, [])

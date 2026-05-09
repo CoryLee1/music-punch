@@ -396,16 +396,18 @@ export default function App() {
               cameraStream={cameraStream}
             />
           )}
-          <EmotionInput
-            disabled={inputDisabled}
-            phase={phase}
-            onSubmit={handleEmotionSubmit}
-            onReset={handleReset}
-            onToggleExpand={handleToggleExpand}
-            isExpanded={expanded}
-            onEasterEgg={() => setEasterEggVisible((v) => !v)}
-            easterEggActive={easterEggVisible}
-          />
+          {expanded && (
+            <EmotionInput
+              disabled={inputDisabled}
+              phase={phase}
+              onSubmit={handleEmotionSubmit}
+              onReset={handleReset}
+              onToggleExpand={handleToggleExpand}
+              isExpanded={expanded}
+              onEasterEgg={() => setEasterEggVisible((v) => !v)}
+              easterEggActive={easterEggVisible}
+            />
+          )}
         </div>
 
         {/* 中/右侧：控制面板 + 折叠态输入栏 */}

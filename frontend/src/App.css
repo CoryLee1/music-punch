@@ -984,13 +984,13 @@
 
 .punch-over-hint {
   position: fixed;
-  bottom: 72px;
+  bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
-  font-family: 'IBM Plex Mono', 'Courier New', ui-monospace, monospace;
+  font-family: 'Courier New', monospace;
   font-size: 9px;
   letter-spacing: 0.35em;
-  color: #00a8bf;
+  color: #a0d8e0;
   pointer-events: none;
   transition: opacity 0.6s ease;
 }

@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
   type RefObject,
 } from 'react'
-import { createRobustHandLandmarker } from '../lib/mediapipeHandLandmarker'
+import { createRobustHandLandmarker, releaseRobustHandLandmarker } from '../lib/mediapipeHandLandmarker'
 import {
   GestureEventDetector,
   pickPrimaryHand,
@@ -610,14 +610,16 @@ export function GestureStage({
     }
   }, [tryStartAudio])
 
-  /* ── HandLandmarker 初始化 ── */
+  /* ── HandLandmarker 初始化（全局单例，组件卸载时仅递减引用） ── */
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
         const lm = await createRobustHandLandmarker()
-        if (!cancelled) landmarkerRef.current = lm
-        else lm.close()
+        if (!cancelled) {
+          landmarkerRef.current = lm
+          setModelError(null)           // 清除可能残留的错误
+        }
       } catch (e) {
         if (!cancelled)
           setModelError(
@@ -627,8 +629,8 @@ export function GestureStage({
     })()
     return () => {
       cancelled = true
-      landmarkerRef.current?.close()
       landmarkerRef.current = null
+      releaseRobustHandLandmarker()     // 递减引用计数；归零时才真正关闭
     }
   }, [])
 
