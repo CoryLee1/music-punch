@@ -11,14 +11,18 @@
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.14",
+    "matter-js": "^0.20.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "three": "^0.184.0",
     "tone": "^15.0.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
+    "@types/matter-js": "^0.20.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.1",
+    "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.3.4",
     "eslint": "^9.15.0",
     "eslint-plugin-react-hooks": "^5.0.0",

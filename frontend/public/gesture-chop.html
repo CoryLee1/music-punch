@@ -1,0 +1,165 @@
+<!--
+  CHOP 手势提示组件 — 刀手斜劈 + 拖尾动画
+  ─────────────────────────────────────────────────────
+  直接嵌入方式：把 <div class="gesture-hint-chop"> ... </div> 整块
+  以及 <script> 内的 JS 复制到你的 HTML 中即可。
+
+  可配置项（通过 GestureHintRenderer 第三个参数）：
+    size          — canvas 逻辑尺寸（px），默认 48
+    cycleDuration — 一轮动画时长（ms），默认 2400
+-->
+<div class="gesture-hint-chop" style="display:inline-flex;align-items:center;gap:8px;">
+  <canvas id="gh-chop-canvas" width="48" height="48" style="display:block;"></canvas>
+  <span style="font-family:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;font-size:12px;letter-spacing:.03em;color:rgba(255,255,255,.52);white-space:nowrap;">CHOP</span>
+</div>
+
+<script>
+/* ============================================================
+ *  CHOP 手势提示 — 零依赖 · 可嵌入任何 HTML
+ * ============================================================ */
+(function () {
+  'use strict';
+
+  var FILL_COLOR = 'rgba(238,238,242,0.92)';
+
+  // ---- helper: filled rounded rect ----
+  function _rr(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ── 刀手绘制 ── 侧面视角，指尖朝左（砍切方向）
+  function drawOpenHand(ctx, s) {
+    ctx.fillStyle = FILL_COLOR;
+
+    // 掌体
+    _rr(ctx, -s * 0.01, -s * 0.18, s * 0.27, s * 0.38, s * 0.05);
+
+    // 4 根手指水平向左
+    var fw = s * 0.063, fg = s * 0.018;
+    var fhs = [s * 0.26, s * 0.33, s * 0.29, s * 0.21];
+    var tw = 4 * fw + 3 * fg;
+    var fy0 = -tw / 2 + s * 0.02;
+    for (var i = 0; i < 4; i++) {
+      var fy = fy0 + i * (fw + fg);
+      var fl = fhs[i];
+      _rr(ctx, -s * 0.01 - fl + s * 0.015, fy, fl, fw, fw * 0.45);
+    }
+
+    // 拇指
+    ctx.save();
+    ctx.translate(s * 0.04, s * 0.19);
+    ctx.rotate(0.50);
+    _rr(ctx, -s * 0.15, -s * 0.034, s * 0.15, s * 0.068, s * 0.032);
+    ctx.restore();
+
+    // 手腕
+    _rr(ctx, s * 0.22, -s * 0.09, s * 0.16, s * 0.20, s * 0.04);
+  }
+
+  // ── 渲染器 ──
+  function GestureHintRenderer(canvas, opts) {
+    opts = opts || {};
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.size = opts.size || 48;
+    this.cycleDuration = opts.cycleDuration || 2400;
+    this.raf = 0;
+    this.startTime = 0;
+
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = this.size * dpr;
+    canvas.height = this.size * dpr;
+    canvas.style.width = this.size + 'px';
+    canvas.style.height = this.size + 'px';
+    this.dpr = dpr;
+  }
+
+  GestureHintRenderer.prototype.start = function () {
+    this.startTime = performance.now();
+    var self = this;
+    (function loop() { self._draw(); self.raf = requestAnimationFrame(loop); })();
+  };
+  GestureHintRenderer.prototype.stop = function () { cancelAnimationFrame(this.raf); };
+
+  // easing
+  function eio(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+  // ── 动画主循环 ──
+  GestureHintRenderer.prototype._draw = function () {
+    var ctx = this.ctx, dpr = this.dpr, s = this.size;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, s, s);
+
+    var t = ((performance.now() - this.startTime) % this.cycleDuration) / this.cycleDuration;
+
+    var cy = s * 0.48, rX = s * 0.68, lX = s * 0.32, mX = s * 0.50;
+    var hx, hy, rot, sp;
+
+    if (t < 0.12) {
+      hx = rX; hy = cy - s * 0.04; rot = -0.35; sp = -1;
+    } else if (t < 0.48) {
+      var p = eio((t - 0.12) / 0.36);
+      hx = rX + (lX - rX) * p;
+      hy = (cy - s * 0.04) + s * 0.08 * p;
+      rot = -0.35 + 0.55 * p;
+      sp = p;
+    } else if (t < 0.62) {
+      var p = (t - 0.48) / 0.14;
+      hx = lX; hy = cy + s * 0.04; rot = 0.20; sp = 1 + p;
+    } else if (t < 0.82) {
+      var p = eio((t - 0.62) / 0.20);
+      hx = lX + (mX - lX) * p;
+      hy = (cy + s * 0.04) + (cy - (cy + s * 0.04)) * p;
+      rot = 0.20 * (1 - p); sp = -1;
+    } else {
+      hx = mX; hy = cy; rot = 0; sp = -1;
+    }
+
+    // 斜线拖尾
+    if (t > 0.10 && t < 0.65) {
+      var sa;
+      if (t < 0.15) sa = (t - 0.10) / 0.05;
+      else if (t < 0.50) sa = 1;
+      else sa = Math.max(0, 1 - (t - 0.50) / 0.15);
+      var prog = Math.min(1, (t < 0.48 ? (t - 0.12) / 0.36 : 1));
+      var x1 = rX + s * 0.06, y1 = cy - s * 0.10;
+      var x2 = x1 + (lX - s * 0.06 - x1) * prog;
+      var y2 = y1 + (cy + s * 0.10 - y1) * prog;
+      var lw = Math.max(1.2, s * 0.016);
+      var steps = 12;
+      for (var i = 0; i < steps; i++) {
+        var t0 = i / steps, t1 = (i + 1) / steps;
+        var sx1 = x1 + (x2 - x1) * t0, sy1 = y1 + (y2 - y1) * t0;
+        var sx2 = x1 + (x2 - x1) * t1, sy2 = y1 + (y2 - y1) * t1;
+        ctx.strokeStyle = 'rgba(255,255,255,' + (sa * 0.4 * (0.1 + t1 * 0.9)).toFixed(3) + ')';
+        ctx.lineWidth = lw * (0.3 + t1 * 0.7);
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+      }
+    }
+
+    // 刀手
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.rotate(rot);
+    drawOpenHand(ctx, s * 0.48);
+    ctx.restore();
+  };
+
+  // ── 自动启动 ──
+  var canvas = document.getElementById('gh-chop-canvas');
+  if (canvas) new GestureHintRenderer(canvas, { size: 48 }).start();
+})();
+</script>

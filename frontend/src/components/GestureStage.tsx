@@ -1,482 +1,735 @@
+import type { HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision'
 import {
-  FilesetResolver,
-  HandLandmarker,
-  type HandLandmarkerResult,
-} from '@mediapipe/tasks-vision'
-import { useCallback, useEffect, useRef } from 'react'
-import type { AppPhase } from './ControlPanel'
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MutableRefObject,
+  type RefObject,
+} from 'react'
 import {
   GestureEventDetector,
-  openness,
-  palmPitchFactorFromOpenness,
   pickPrimaryHand,
   type GestureHit,
 } from '../lib/handGestures'
-import { PLAYBACK_GAIN, SampleLoopController } from '../lib/samplePlayer'
+import {
+  PLAYBACK_GAIN,
+  SampleLoopController,
+  resumeAudioContext,
+} from '../lib/samplePlayer'
+import {
+  startTextMatterWorld,
+  type HandProbePoint,
+} from '../lib/runTextMatter'
+import { TechnoScanOverlay } from './TechnoScanOverlay'
+import { createRobustHandLandmarker } from '../lib/mediapipeHandLandmarker'
+import {
+  ParticlePunchOverlay,
+  type ParticlePunchHandle,
+} from './ParticlePunchOverlay'
+import {
+  BeatGestureHint,
+  type BeatGestureHintHandle,
+} from './BeatGestureHint'
+import sampleBeatsGuide from '../data/sample-beats.json'
+import { isWithinBeatWindow } from '../lib/beatSync'
 
-/* ───── MediaPipe 配置 ───── */
-const WASM_BASE =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
-const HAND_MODEL =
-  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
-
-/* ───── 手部关键点索引 ───── */
-const THUMB = 4
+const W = 640
+const H = 480
 const INDEX = 8
+const THUMB_TIP = 4
+const INDEX_TIP = 8
+const MIDDLE_TIP_IDX = 12
+const RING_TIP_IDX = 16
+const PINKY_TIP = 20
+/** 五指指尖拖尾：寿命与点数（每只手 5 条） */
+const TIP_GLOW_TRAIL_MAX_AGE_MS = 560
+const TIP_GLOW_TRAIL_MAX_POINTS = 34
+/** 拇指、食指、中指、无名指、小指 TIP 序号（与 MediaPipe 一致） */
+const FINGER_TIP_INDICES = [
+  THUMB_TIP,
+  INDEX_TIP,
+  MIDDLE_TIP_IDX,
+  RING_TIP_IDX,
+  PINKY_TIP,
+] as const
 
-/* ───── 视觉常量 ───── */
-const GLYPHS = '○◎□⊠×+✦·—/⊕◇⊹∴Δ⟨⟩'
-const GRID_ALPHA = 0.06
-/** 品牌色 RGB（浅底适配） */
-const B = '0, 140, 160'
-/** 深色文字 RGB */
-const T = '0, 0, 0'
+type TipGlowPoint = { x: number; y: number; t: number }
 
-/* ───── 工具函数 ───── */
+function emptyHandTipGlowTrails(): TipGlowPoint[][] {
+  return FINGER_TIP_INDICES.map(() => [])
+}
+
+const MAX_HANDS_FOR_TIP_GLOW = 2
+/** 非击打玩法时：出拳/切手落在主拍 ±该秒内才给背景升半音 */
+const BEAT_PITCH_BUMP_WINDOW_SEC = 0.12
+
+function schedulePunchViewportPulse(
+  root: HTMLElement | null,
+  timerRef: MutableRefObject<ReturnType<typeof window.setTimeout> | null>,
+  particleCombo = 0,
+): void {
+  if (!root) return
+  const prev = timerRef.current
+  if (prev != null) window.clearTimeout(prev)
+  root.classList.remove(
+    'is-punch-viewport-zoom',
+    'is-punch-viewport-combo-mid',
+    'is-punch-viewport-combo-high',
+  )
+  requestAnimationFrame(() => {
+    root.classList.add('is-punch-viewport-zoom')
+    if (particleCombo >= 10) root.classList.add('is-punch-viewport-combo-high')
+    else if (particleCombo >= 5)
+      root.classList.add('is-punch-viewport-combo-mid')
+  })
+  timerRef.current = window.setTimeout(() => {
+    root.classList.remove(
+      'is-punch-viewport-zoom',
+      'is-punch-viewport-combo-mid',
+      'is-punch-viewport-combo-high',
+    )
+    timerRef.current = null
+  }, 560)
+}
+
+const TEXT_SCAN_MS = 4400
+const TEXT_MATTER_MS = 7600
+
+/** 音频未播放时节拍引导仍与默认 loop 对齐（与 sample-beats.json 同一素材） */
+const BEAT_GUIDE_FALLBACK_DURATION_SEC = Math.max(
+  0.5,
+  typeof sampleBeatsGuide.durationSec === 'number'
+    ? sampleBeatsGuide.durationSec
+    : 10.33,
+)
+/** 传给 BeatGestureHint：墙钟回退，与 Tone syncGeneration 区分 */
+const BEAT_HINT_SYNC_WALLCLOCK = -1
+
+/** 为 false 时不显示 TECHNO_SCAN 与 Matter 字形掉落画面（原计时与回调照旧） */
+const SHOW_TEXT_SEQUENCE_VISUALS = false
+
+/** MediaPipe 手部骨架（与 Tasks 21 关键点索引一致） */
+const HAND_CONNECTIONS: [number, number][] = [
+  [0, 1],
+  [1, 2],
+  [2, 3],
+  [3, 4],
+  [0, 5],
+  [5, 6],
+  [6, 7],
+  [7, 8],
+  [5, 9],
+  [9, 10],
+  [10, 11],
+  [11, 12],
+  [9, 13],
+  [13, 14],
+  [14, 15],
+  [15, 16],
+  [13, 17],
+  [17, 18],
+  [18, 19],
+  [19, 20],
+  [0, 17],
+]
+
+const PAL = {
+  /** 近似纯黑底 */
+  bg: [6, 6, 8] as const,
+  /** 主细线 / 文字 */
+  ink: [248, 248, 250] as const,
+  /** 次级注释 */
+  inkFaint: [130, 130, 135] as const,
+  /** 飘字碎片 */
+  ghost: [255, 255, 255] as const,
+}
+
+function nf(n: number, _w: number, dec: number) {
+  if (dec <= 0) return String(Math.round(n))
+  return n.toFixed(dec)
+}
+
+function fract(x: number) {
+  return x - Math.floor(x)
+}
+
 function pseudoNoise(i: number, j: number, t: number) {
-  return (Math.sin(i * 12.9898 + j * 78.233 + t * 2.399) * 43758.5453) % 1
-}
-
-function mapRange(v: number, a: number, b: number, c: number, d: number) {
-  return c + ((v - a) / (b - a)) * (d - c)
-}
-
-function constrain(v: number, lo: number, hi: number) {
-  return Math.min(hi, Math.max(lo, v))
-}
-
-function nf(n: number, dec: number) {
-  return dec <= 0 ? String(Math.round(n)) : n.toFixed(dec)
+  return fract(Math.sin(i * 12.9898 + j * 78.233 + t * 2.399) * 43758.5453)
 }
 
 type LM = { x: number; y: number }
 
-/* ═══════════════════════════════════════════════════
-   绘制函数 — 全部使用品牌色 rgba(0, 189, 214, α)
-   ═══════════════════════════════════════════════════ */
-
-/** 绘制浅色背景 + 网格 */
-function drawBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  ctx.fillStyle = '#f0f0f0'
-  ctx.fillRect(0, 0, w, h)
-
-  ctx.strokeStyle = `rgba(${B}, ${GRID_ALPHA})`
-  ctx.lineWidth = 0.5
-  const gridSize = 60
-  for (let x = 0; x < w; x += gridSize) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
-  }
-  for (let y = 0; y < h; y += gridSize) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
-  }
-}
-
-/** 漂浮字符背景 */
-function drawFloatingGlyphs(ctx: CanvasRenderingContext2D, w: number, h: number, frame: number) {
-  ctx.textBaseline = 'alphabetic'
-  ctx.font = '10px "Space Mono", monospace'
-  const t = frame * 0.008
-  for (let i = 0; i < 50; i++) {
-    const nx = Math.abs(pseudoNoise(i * 0.17 + t, i * 0.03, 0))
-    const ny = Math.abs(pseudoNoise(i * 0.19 + 40, i * 0.07 + t, 1))
-    ctx.fillStyle = `rgba(${B}, ${0.06 + (i % 5) * 0.018})`
-    ctx.fillText(GLYPHS.charAt(i % GLYPHS.length), nx * w, ny * h)
-  }
-}
-
 /**
- * 8×10 粗体点阵字形（匹配参考图风格）
- * 每行 8 bit，MSB = 左列；笔画 2-dot 宽
- *
- * P  .#####..   O  .#####..   U  ##...##.   N  ##...##.
- *    ##...##.      ##...##.      ##...##.      ###..##.
- *    ##...##.      ##...##.      ##...##.      ####.##.
- *    ##...##.      ##...##.      ##...##.      ##.####.
- *    ######..      ##...##.      ##...##.      ##..###.
- *    ##......      ##...##.      ##...##.      ##...##.
- *    ##......      ##...##.      ##...##.      ##...##.
- *    ##......      ##...##.      ##...##.      ##...##.
- *    ##......      ##...##.      .######.      ##...##.
- *    ##......      .#####..      ..####..      ##...##.
+ * 摄像头在 canvas 上水平翻转时，与 MediaPipe 原始图坐标对齐：镜像归一化 x。
  */
-const DOT_FONT: Record<string, number[]> = {
-  P: [0x7C,0xC6,0xC6,0xC6,0xFC,0xC0,0xC0,0xC0,0xC0,0xC0],
-  O: [0x7C,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0x7C],
-  U: [0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0xC6,0x7E,0x3C],
-  N: [0xC6,0xE6,0xF6,0xDE,0xCE,0xC6,0xC6,0xC6,0xC6,0xC6],
-  C: [0x7C,0xC6,0xC0,0xC0,0xC0,0xC0,0xC0,0xC0,0xC6,0x7C],
-  H: [0xC6,0xC6,0xC6,0xC6,0xFE,0xC6,0xC6,0xC6,0xC6,0xC6],
-  ' ': [0,0,0,0,0,0,0,0,0,0],
+function mirrorLandmarksFromCamera(
+  landmarks: HandLandmarkerResult['landmarks'] | undefined,
+): HandLandmarkerResult['landmarks'] {
+  if (!landmarks?.length) return []
+  return landmarks.map((hand) =>
+    hand.map((p) => ({
+      ...p,
+      x: 1 - p.x,
+    })),
+  )
 }
 
-/** 绘制点阵风格 "POP PUNCH" 待机水印（匹配参考图方形点阵） */
-function drawDotMatrixTitle(ctx: CanvasRenderingContext2D, w: number, h: number, _frame: number) {
-  const lines = ['POP', 'PUNCH']
-  const CHAR_W = 8       // 每个字符宽（dot 格）
-  const CHAR_H = 10      // 每个字符高（dot 格）
-  const CHAR_GAP = 2     // 字符间距（dot 格）
-  const LINE_GAP = 3     // 行间距（dot 格）
+function drawGlitchField(
+  ctx: CanvasRenderingContext2D,
+  frame: number,
+  w: number,
+  h: number,
+): void {
+  const glyphs = '01/\\[]{}⟨⟩::xx⊹⌁∴Δ'
+  ctx.textBaseline = 'alphabetic'
+  ctx.font = '9px "IBM Plex Mono", monospace'
+  const t = frame * 0.012
+  const cx = w / 2
+  const cy = h / 2
+  const scale = Math.min(w, h)
+  for (let i = 0; i < 95; i++) {
+    const nx = pseudoNoise(i * 0.17 + t, i * 0.03, 0)
+    const ny = pseudoNoise(i * 0.19 + 40, i * 0.07 + t, 1)
+    const dx = (nx - 0.5) * 1.15
+    const dy = (ny - 0.5) * 0.95
+    const x = cx + dx * scale * 0.62
+    const y = cy + dy * scale * 0.52
+    ctx.fillStyle = `rgba(${PAL.ghost[0]}, ${PAL.ghost[1]}, ${PAL.ghost[2]}, ${0.05 + (i % 7) * 0.012})`
+    ctx.fillText(glyphs.charAt(i % glyphs.length), x, y)
+  }
+}
 
-  // 以最宽行（PUNCH = 5字）自适应方块大小，占画布 ~55% 宽
-  const maxLineChars = Math.max(...lines.map(l => l.length))
-  const totalGridW = maxLineChars * CHAR_W + (maxLineChars - 1) * CHAR_GAP
-  const DOT = Math.max(3, Math.floor(w * 0.52 / totalGridW))
-  const GAP = Math.max(1, Math.round(DOT * 0.32))
-  const STEP = DOT + GAP
+function drawSystemHeader(ctx: CanvasRenderingContext2D): void {
+  ctx.font = '11px "IBM Plex Mono", monospace'
+  ctx.fillStyle = `rgb(${PAL.inkFaint[0]}, ${PAL.inkFaint[1]}, ${PAL.inkFaint[2]})`
+  let y = 22
+  ctx.fillText('// SYSTEM: MATRIX_VOID · REACT_VITE', 14, y)
+  ctx.fillText('// RIPPLE: SAMPLE_RATE_BINDING · TONE_PLAYER', 14, y + 14)
+  ctx.fillText('// VISUAL: THIN_MONO · BW_REFERENCE', 14, y + 28)
+}
 
-  const totalH = lines.length * CHAR_H * STEP + (lines.length - 1) * LINE_GAP * STEP
-  const startY = (h - totalH) / 2
+function drawIdleGeometry(
+  ctx: CanvasRenderingContext2D,
+  frame: number,
+  w: number,
+  h: number,
+): void {
+  const cx = w / 2
+  const cy = h / 2
+  const baseR = (88 * Math.min(w, h)) / 480
+  const r = baseR + Math.sin(frame * 0.02) * 4
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.42)`
+  ctx.lineWidth = 0.6
+  ctx.setLineDash([3, 7])
+  ctx.beginPath()
+  ctx.ellipse(cx, cy, r, r, 0, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.setLineDash([])
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 3) {
+    ctx.beginPath()
+    ctx.moveTo(cx, cy)
+    ctx.lineTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6))
+    ctx.stroke()
+  }
+}
 
-  // 很浅的品牌色 + 微弱呼吸
-  const alpha = 0.09 + Math.sin(_frame * 0.012) * 0.015
-  ctx.fillStyle = `rgba(${B}, ${alpha})`
+function drawStartPrompt(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+): void {
+  const cx = w / 2
+  const cy = h / 2
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.9)`
+  ctx.lineWidth = 0.75
+  ctx.strokeRect(cx - 248, cy - 42, 496, 84)
+  ctx.fillStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
+  ctx.font = '13px "IBM Plex Mono", monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('[ BG_LOOP · AUTO_START · TAP_PREVIEW_IF_SILENT ]', cx, cy - 14)
+  ctx.font = '12px "IBM Plex Mono", monospace'
+  ctx.fillStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.82)`
+  ctx.fillText(
+    '背景循环自动尝试播放 · 静音用 // STOP_AUDIO · 停止后可点预览区恢复',
+    cx,
+    cy + 14,
+  )
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+}
 
-  for (let li = 0; li < lines.length; li++) {
-    const line = lines[li]
-    const lineGridW = line.length * CHAR_W + (line.length - 1) * CHAR_GAP
-    const linePixelW = lineGridW * STEP
-    const startX = (w - linePixelW) / 2
-    const rowY = startY + li * ((CHAR_H + LINE_GAP) * STEP)
+/** 摄像头尚未出帧时提示（RAF 也会在未就绪时 paint，避免整区空白像「没开摄像头」） */
+function drawCameraWaiting(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  ctx.font = '12px "IBM Plex Mono", monospace'
+  ctx.textAlign = 'center'
+  ctx.fillStyle = `rgb(${PAL.inkFaint[0]}, ${PAL.inkFaint[1]}, ${PAL.inkFaint[2]})`
+  ctx.fillText('// CAMERA · 等待摄像头画面 / 请确认浏览器已授权', w / 2, h / 2 - 8)
+  ctx.font = '10px "IBM Plex Mono", monospace'
+  ctx.fillText(
+    '// 若一直无画面：检查地址栏摄像头权限 · 须 localhost 或 HTTPS',
+    w / 2,
+    h / 2 + 14,
+  )
+  ctx.textAlign = 'left'
+}
 
-    for (let ci = 0; ci < line.length; ci++) {
-      const glyph = DOT_FONT[line[ci]]
-      if (!glyph) continue
-      const charX = startX + ci * (CHAR_W + CHAR_GAP) * STEP
+function drawHandConnections(
+  ctx: CanvasRenderingContext2D,
+  landmarks: LM[],
+  w: number,
+  h: number,
+): void {
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.38)`
+  ctx.lineWidth = 0.5
+  for (const [a, b] of HAND_CONNECTIONS) {
+    const pa = landmarks[a]
+    const pb = landmarks[b]
+    if (!pa || !pb) continue
+    ctx.beginPath()
+    ctx.moveTo(pa.x * w, pa.y * h)
+    ctx.lineTo(pb.x * w, pb.y * h)
+    ctx.stroke()
+  }
+}
 
-      for (let row = 0; row < CHAR_H; row++) {
-        const bits = glyph[row]
-        for (let col = 0; col < CHAR_W; col++) {
-          if (bits & (1 << (7 - col))) {
-            ctx.fillRect(
-              charX + col * STEP,
-              rowY + row * STEP,
-              DOT, DOT,
-            )
-          }
+/** 五指指尖白色运动拖尾（宽光晕 + 亮芯） */
+function drawFingerTipGlowTrail(
+  ctx: CanvasRenderingContext2D,
+  trail: TipGlowPoint[],
+  nowMs: number,
+): void {
+  if (trail.length === 0) return
+  const maxAge = TIP_GLOW_TRAIL_MAX_AGE_MS
+  const segAlpha = (t0: number, t1: number) => {
+    const a0 = Math.max(0, 1 - (nowMs - t0) / maxAge)
+    const a1 = Math.max(0, 1 - (nowMs - t1) / maxAge)
+    return Math.min(a0, a1)
+  }
+
+  ctx.save()
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  if (trail.length >= 2) {
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i < trail.length; i++) {
+        const p0 = trail[i - 1]!
+        const p1 = trail[i]!
+        const sa = segAlpha(p0.t, p1.t)
+        if (sa < 0.02) continue
+        /** 尾巴根（较旧段 sa 小）略加粗，视觉上更「粗根细梢」 */
+        const rootWide = 1 - sa
+        if (pass === 0) {
+          ctx.strokeStyle = `rgba(255, 255, 255, ${sa * 0.22})`
+          ctx.lineWidth = 7 + sa * 6 + rootWide * 11
+        } else {
+          ctx.strokeStyle = `rgba(255, 255, 255, ${sa * 0.92})`
+          ctx.lineWidth = 1 + sa * 1.65 + rootWide * 2.4
         }
+        ctx.beginPath()
+        ctx.moveTo(p0.x, p0.y)
+        ctx.lineTo(p1.x, p1.y)
+        ctx.stroke()
       }
     }
   }
+
+  const head = trail[trail.length - 1]!
+  const headAge = Math.max(0, 1 - (nowMs - head.t) / maxAge)
+  if (headAge > 0.06) {
+    const g = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 14)
+    g.addColorStop(0, `rgba(255, 255, 255, ${headAge * 0.5})`)
+    g.addColorStop(0.45, `rgba(255, 255, 255, ${headAge * 0.12})`)
+    g.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(head.x, head.y, 14, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  ctx.restore()
 }
 
-/** 中心圆环（idle 呼吸动画） */
-function drawIdleRing(ctx: CanvasRenderingContext2D, w: number, h: number, frame: number) {
-  const cx = w / 2, cy = h / 2
-  const r = 80 + Math.sin(frame * 0.015) * 6
-  ctx.strokeStyle = `rgba(${B}, 0.25)`
-  ctx.lineWidth = 0.8
-  ctx.setLineDash([4, 8])
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke()
+function drawHandThin(
+  ctx: CanvasRenderingContext2D,
+  landmarks: LM[],
+  w: number,
+  h: number,
+): void {
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.55)`
+  ctx.lineWidth = 0.55
+  for (const p of landmarks) {
+    const x = p.x * w
+    const y = p.y * h
+    ctx.beginPath()
+    ctx.ellipse(x, y, 3.5, 3.5, 0, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+}
+
+/** 与 legacy-p5 sketch.js 中 drawPinchConstruct 一致 */
+function drawPinchConstruct(
+  ctx: CanvasRenderingContext2D,
+  thumb: LM,
+  indexFinger: LM,
+  w: number,
+  h: number,
+): void {
+  const tx = thumb.x * w
+  const ty = thumb.y * h
+  const ix = indexFinger.x * w
+  const iy = indexFinger.y * h
+  const cx = (tx + ix) / 2
+  const cy = (ty + iy) / 2
+  const radius = Math.hypot(tx - ix, ty - iy)
+
+  ctx.strokeStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
+  ctx.lineWidth = 0.65
+  ctx.beginPath()
+  ctx.moveTo(tx, ty)
+  ctx.lineTo(ix, iy)
+  ctx.stroke()
+
+  ctx.setLineDash([5, 6])
+  ctx.beginPath()
+  ctx.ellipse(cx, cy, radius, radius, 0, 0, Math.PI * 2)
+  ctx.stroke()
   ctx.setLineDash([])
 
-  const cr = 10
-  ctx.strokeStyle = `rgba(${B}, 0.15)`
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.7)`
   ctx.lineWidth = 0.5
+  drawCircleWithX(ctx, cx, cy, 5)
+
+  ctx.fillStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
   ctx.beginPath()
-  ctx.moveTo(cx - cr, cy); ctx.lineTo(cx + cr, cy)
-  ctx.moveTo(cx, cy - cr); ctx.lineTo(cx, cy + cr)
+  ctx.ellipse(cx, cy, 2.2, 2.2, 0, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function drawCircleWithX(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+): void {
+  ctx.beginPath()
+  ctx.ellipse(x, y, r, r, 0, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(x - r * 0.65, y - r * 0.65)
+  ctx.lineTo(x + r * 0.65, y + r * 0.65)
+  ctx.moveTo(x - r * 0.65, y + r * 0.65)
+  ctx.lineTo(x + r * 0.65, y - r * 0.65)
   ctx.stroke()
 }
 
-/** 系统头部信息 */
-function drawSystemInfo(ctx: CanvasRenderingContext2D, phase: AppPhase, emotion: string, elapsed: number) {
-  ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${T}, 0.25)`
-  ctx.textBaseline = 'top'
-  ctx.fillText(`// PHASE: ${phase.toUpperCase()}`, 16, 16)
-  if (emotion) ctx.fillText(`// EMOTION: "${emotion.slice(0, 30)}"`, 16, 32)
-  if (phase === 'active') {
-    const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
-    const ss = String(Math.floor(elapsed) % 60).padStart(2, '0')
-    ctx.fillText(`// ELAPSED: ${mm}:${ss}`, 16, emotion ? 48 : 32)
-  }
+/** 与 sketch.js drawDataHUD 布局一致 */
+function drawTraceHUD(
+  ctx: CanvasRenderingContext2D,
+  pinchCx: number,
+  pinchCy: number,
+  radiusPx: number,
+  playbackRate: number,
+  volume: number,
+  w: number,
+  h: number,
+): void {
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.4)`
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(w / 2, h / 2)
+  ctx.lineTo(pinchCx, pinchCy)
+  ctx.stroke()
+
+  ctx.font = '10px "IBM Plex Mono", monospace'
+  ctx.fillStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
+  ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
+  ctx.fillText(
+    `POS X: ${nf(pinchCx, 1, 0)}  Y: ${nf(pinchCy, 1, 0)}`,
+    pinchCx + 12,
+    pinchCy - 6,
+  )
+  ctx.fillText(`[ PINCH_R: ${nf(radiusPx, 1, 1)} ]`, pinchCx + 12, pinchCy + 8)
+  ctx.fillText(
+    `PITCH // VOL  ${nf(playbackRate, 1, 2)}  ·  ${nf(volume, 1, 2)}`,
+    14,
+    h - 38,
+  )
+
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.55)`
+  ctx.lineWidth = 0.55
+  ctx.strokeRect(10, 52, 280, 74)
+
+  ctx.fillStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
+  ctx.fillText('// TRACE · GESTURE_SAMPLE_CONTROLLER', 18, 70)
+  ctx.fillText(`RADIUS        ${nf(radiusPx, 1, 1)} px`, 18, 88)
+  ctx.fillText(
+    `PITCH_FACTOR ${nf(playbackRate, 1, 2)}  (½ ST per hit)`,
+    18,
+    104,
+  )
+  ctx.fillText(`AMPLITUDE     ${nf(volume, 1, 2)}`, 18, 120)
 }
 
-/** 手部骨架绘制（镜像 x 坐标，与摄像头预览方向一致） */
-function drawHandSkeleton(ctx: CanvasRenderingContext2D, landmarks: LM[], w: number, h: number) {
-  ctx.fillStyle = `rgba(${B}, 0.75)`
-  for (const p of landmarks) {
-    ctx.beginPath(); ctx.arc((1 - p.x) * w, p.y * h, 2.5, 0, Math.PI * 2); ctx.fill()
-  }
-
-  const connections = [
-    [0,1],[1,2],[2,3],[3,4],
-    [0,5],[5,6],[6,7],[7,8],
-    [0,9],[9,10],[10,11],[11,12],
-    [0,13],[13,14],[14,15],[15,16],
-    [0,17],[17,18],[18,19],[19,20],
-    [5,9],[9,13],[13,17],
-  ]
-  ctx.strokeStyle = `rgba(${B}, 0.4)`
-  ctx.lineWidth = 0.8
-  for (const [a, b] of connections) {
-    if (a < landmarks.length && b < landmarks.length) {
-      ctx.beginPath()
-      ctx.moveTo((1 - landmarks[a].x) * w, landmarks[a].y * h)
-      ctx.lineTo((1 - landmarks[b].x) * w, landmarks[b].y * h)
-      ctx.stroke()
-    }
-  }
-}
-
-/** 捏合构造线 — 拇指和食指之间的关系可视化（镜像） */
-function drawPinchConstruct(ctx: CanvasRenderingContext2D, thumb: LM, idx: LM, radius: number, w: number, h: number) {
-  const tx = (1 - thumb.x) * w, ty = thumb.y * h
-  const ix = (1 - idx.x) * w, iy = idx.y * h
-  const mx = (tx + ix) / 2, my = (ty + iy) / 2
-
-  // 连线
-  ctx.strokeStyle = `rgba(${B}, 0.5)`
-  ctx.lineWidth = 0.6
-  ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(ix, iy); ctx.stroke()
-
-  // 中心半径圆
-  ctx.strokeStyle = `rgba(${B}, 0.25)`
-  ctx.lineWidth = 0.4
-  ctx.beginPath(); ctx.arc(mx, my, radius / 2, 0, Math.PI * 2); ctx.stroke()
-
-  // 中心到画布中心的辅助线
-  ctx.strokeStyle = `rgba(${B}, 0.15)`
-  ctx.lineWidth = 0.3
-  ctx.beginPath(); ctx.moveTo(w / 2, h / 2); ctx.lineTo(mx, my); ctx.stroke()
-}
-
-/** 手势事件提示（抓/出拳/切） */
-function drawGestureCue(ctx: CanvasRenderingContext2D, w: number, cue: { labelZh: string; labelEn: string; t: number }, ageMs: number) {
-  const duration = 1200
-  const fade = Math.max(0, 1 - ageMs / duration)
+function drawGestureCue(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  hit: { labelZh: string; labelEn: string },
+  ageMs: number,
+): void {
+  const fade = Math.max(0, 1 - ageMs / 4200)
   if (fade <= 0) return
-
   ctx.save()
-  ctx.font = '13px "Space Mono", monospace'
+  ctx.font = '13px "IBM Plex Mono", monospace'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   const y = 96
-  ctx.fillStyle = `rgba(${B}, ${0.25 + 0.6 * fade})`
-  ctx.fillText(`// GESTURE · ${cue.labelZh}  /  ${cue.labelEn}`, w / 2, y)
+  ctx.fillStyle = `rgba(248, 248, 250, ${0.15 + 0.55 * fade})`
+  ctx.fillText(`// GESTURE · ${hit.labelZh}  /  ${hit.labelEn}`, w / 2, y)
   ctx.lineWidth = 0.6
-  ctx.strokeStyle = `rgba(${B}, ${0.3 + 0.5 * fade})`
+  ctx.strokeStyle = `rgba(248, 248, 250, ${0.25 + 0.45 * fade})`
   ctx.strokeRect(w / 2 - 158, y - 6, 316, 26)
   ctx.restore()
 }
 
-/** 手势数据 HUD（镜像坐标） */
-function drawDataHUD(
-  ctx: CanvasRenderingContext2D,
-  thumb: LM, idx: LM, radius: number,
-  playbackRate: number, palmOpen: number, palmMul: number,
-  w: number, h: number,
-) {
-  const cx = ((1 - thumb.x) * w + (1 - idx.x) * w) / 2
-  const cy = (thumb.y * h + idx.y * h) / 2
-
-  ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${B}, 0.8)`
-  ctx.fillText(`POS X:${nf(cx, 0)} Y:${nf(cy, 0)}`, cx + 12, cy - 6)
-  ctx.fillText(`PINCH_R: ${nf(radius, 1)}`, cx + 12, cy + 8)
-
-  // 底部面板
-  ctx.strokeStyle = `rgba(${B}, 0.25)`
-  ctx.lineWidth = 0.55
-  ctx.strokeRect(10, h - 88, 280, 76)
-
-  ctx.fillStyle = `rgba(${T}, 0.5)`
-  ctx.fillText('// TRACE · GESTURE_CONTROLLER', 18, h - 72)
-  ctx.fillText(`RADIUS        ${nf(radius, 1)} px`, 18, h - 56)
-  ctx.fillText(`PINCH_RATE    ${nf(playbackRate, 2)}`, 18, h - 42)
-  ctx.fillText(`PALM_OPEN     ${nf(palmOpen, 3)}  ·  MUL ${nf(palmMul, 3)}`, 18, h - 28)
-  ctx.fillText(`GAIN · ${PLAYBACK_GAIN}  (常驻)`, 18, h - 14)
+function drawSignalNull(ctx: CanvasRenderingContext2D, h: number): void {
+  ctx.font = '10px "IBM Plex Mono", monospace'
+  ctx.fillStyle = `rgb(${PAL.inkFaint[0]}, ${PAL.inkFaint[1]}, ${PAL.inkFaint[2]})`
+  ctx.fillText('// SIGNAL: NULL · NO_HAND', 14, h - 18)
 }
 
-/** Loading 状态绘制 */
-function drawLoadingState(ctx: CanvasRenderingContext2D, w: number, h: number, frame: number, emotion: string) {
-  const cx = w / 2, cy = h / 2
-  const angle = frame * 0.04
-  const r = 55
+export type TextPhysicsJob = { id: number; text: string }
 
-  ctx.strokeStyle = `rgba(${B}, 0.15)`; ctx.lineWidth = 1
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke()
-
-  ctx.strokeStyle = `rgba(${B}, 0.65)`; ctx.lineWidth = 1.5
-  ctx.beginPath(); ctx.arc(cx, cy, r, angle, angle + Math.PI * 0.6); ctx.stroke()
-
-  const r2 = 35
-  ctx.strokeStyle = `rgba(${B}, 0.1)`; ctx.lineWidth = 0.5
-  ctx.beginPath(); ctx.arc(cx, cy, r2, 0, Math.PI * 2); ctx.stroke()
-
-  ctx.strokeStyle = `rgba(${B}, 0.45)`; ctx.lineWidth = 1
-  ctx.beginPath(); ctx.arc(cx, cy, r2, -angle * 0.7, -angle * 0.7 + Math.PI * 0.4); ctx.stroke()
-
-  ctx.font = '11px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${B}, 0.6)`
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-  ctx.fillText('PARSING EMOTION', cx, cy - 80)
-
-  ctx.font = '13px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${T}, 0.7)`
-  const displayEmotion = emotion.length > 24 ? emotion.slice(0, 24) + '…' : emotion
-  ctx.fillText(`"${displayEmotion}"`, cx, cy + 80)
-
-  const dots = '.'.repeat(Math.floor(frame / 20) % 4)
-  ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${T}, 0.35)`
-  ctx.fillText(`GENERATING${dots}`, cx, cy + 105)
-
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
-}
-
-/** 底部提示文字 */
-function drawBottomHint(ctx: CanvasRenderingContext2D, w: number, h: number, text: string) {
-  ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${T}, 0.2)`
-  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'
-  ctx.fillText(text, w / 2, h - 16)
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
-}
-
-/** 无手势时的提示 */
-function drawSignalNull(ctx: CanvasRenderingContext2D, h: number) {
-  ctx.font = '10px "Space Mono", monospace'
-  ctx.fillStyle = `rgba(${T}, 0.3)`
-  ctx.fillText('// SIGNAL: NULL · SHOW HANDS TO CAMERA', 14, h - 18)
-}
-
-/** 白闪效果 */
-function drawWhiteFlash(ctx: CanvasRenderingContext2D, w: number, h: number, progress: number) {
-  const alpha = Math.max(0, 0.9 * (1 - progress))
-  ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
-  ctx.fillRect(0, 0, w, h)
-}
-
-/** PUNCH OVER 文字 */
-function drawPunchOver(
-  ctx: CanvasRenderingContext2D, w: number, h: number,
-  progress: number, flicker: boolean, fade: boolean, fadeProgress: number,
-) {
-  ctx.save()
-  const bgAlpha = fade ? Math.max(0, 0.92 * (1 - fadeProgress)) : 0.92
-  ctx.fillStyle = `rgba(240, 240, 240, ${bgAlpha})`
-  ctx.fillRect(0, 0, w, h)
-
-  const scaleT = Math.min(progress / 0.08, 1)
-  const eased = scaleT < 1 ? 1 - Math.pow(1 - scaleT, 3) * (1 + 2.5 * (1 - scaleT)) : 1
-  const scale = 0.3 + 0.7 * Math.min(eased, 1.15)
-
-  let textAlpha = Math.min(scaleT, 1)
-  if (fade) textAlpha *= Math.max(0, 1 - fadeProgress)
-  if (flicker) textAlpha *= 0.85 + 0.15 * Math.sin(performance.now() * 0.04)
-
-  ctx.translate(w / 2, h / 2)
-  ctx.scale(scale, scale)
-  const fontSize = Math.min(w * 0.12, 120)
-  ctx.font = `700 ${fontSize}px "Space Mono", "IBM Plex Mono", monospace`
-  ctx.fillStyle = `rgba(0, 0, 0, ${textAlpha * 0.85})`
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-  ctx.fillText('PUNCH OVER', 0, 0)
-  ctx.restore()
-}
-
-/* ═══════════════════════════════════════════════════
-   主组件
-   ═══════════════════════════════════════════════════ */
-
-interface GestureStageProps {
-  phase: AppPhase
-  emotion: string
-  elapsed: number
-  videoRef: React.RefObject<HTMLVideoElement | null>
-  /** 音频控制器（由 App 传入） */
-  audioRef: React.RefObject<SampleLoopController | null>
-  audioStarted: boolean
-  onError?: (msg: string) => void
-  onGestureHit?: (hit: GestureHit) => void
-  /** PUNCH OVER 相关 */
-  showWhiteFlash?: boolean
-  showPunchOver?: boolean
-  punchOverFlicker?: boolean
-  punchOverFade?: boolean
+type GestureStageProps = {
+  textPhysicsJob?: TextPhysicsJob | null
+  onTextPhysicsComplete?: () => void
+  /** 扫描/落体进行中仍可调用，会派发新任务并重启序列 */
+  onMidSequencePhysicsText?: (text: string) => void
+  /** TECHNO_SCAN 结束、进入 Matter 瞬间 — 用于启动 60s 音乐击打回合 */
+  onEmotionScanComplete?: () => void
+  /** 主循环音频首次成功启动时（自动尝试、摄像头就绪或用户点预览区恢复等） */
+  onAudioPlaybackStarted?: () => void
+  musicPunchGameActive?: boolean
+  musicPunchHandleRef?: RefObject<ParticlePunchHandle | null>
+  onMusicPunchSuccessfulHit?: () => void
+  musicPunchHud?: { timeLeft: number; score: number; combo: number } | null
+  /** 击打成功计数，用于分数与节拍数字弹跳 */
+  musicPunchHitTick?: number
 }
 
 export function GestureStage({
-  phase,
-  emotion,
-  elapsed,
-  videoRef,
-  audioRef,
-  audioStarted,
-  onError,
-  onGestureHit,
-  showWhiteFlash = false,
-  showPunchOver = false,
-  punchOverFlicker = false,
-  punchOverFade = false,
+  textPhysicsJob = null,
+  onTextPhysicsComplete,
+  onMidSequencePhysicsText,
+  onEmotionScanComplete,
+  onAudioPlaybackStarted,
+  musicPunchGameActive = false,
+  musicPunchHandleRef,
+  onMusicPunchSuccessfulHit,
+  musicPunchHud = null,
+  musicPunchHitTick = 0,
 }: GestureStageProps) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const punchViewportFxTimerRef = useRef<ReturnType<
+    typeof window.setTimeout
+  > | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const matterCanvasRef = useRef<HTMLCanvasElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
+  const audioRef = useRef<SampleLoopController | null>(null)
+  const beatGestureHintRef = useRef<BeatGestureHintHandle | null>(null)
+  const punchHudRef = useRef<HTMLDivElement>(null)
+  const canvasHostRef = useRef<HTMLDivElement>(null)
+  const fingertipGlowTrailsRef = useRef<TipGlowPoint[][][]>([
+    emptyHandTipGlowTrails(),
+    emptyHandTipGlowTrails(),
+  ])
   const rafRef = useRef<number>(0)
   const frameRef = useRef(0)
-  const sizeRef = useRef({ w: 800, h: 600 })
-
-  // 手势识别
   const gestureDetectorRef = useRef(new GestureEventDetector())
-  const lastGestureCueRef = useRef<{ labelZh: string; labelEn: string; t: number } | null>(null)
-  const palmOpenSmoothRef = useRef(0.155)
+  const lastGestureCueRef = useRef<{
+    labelZh: string
+    labelEn: string
+    t: number
+  } | null>(null)
+  const sequencePhaseRef = useRef<'idle' | 'scan' | 'matter'>('idle')
+  const matterProbeRef = useRef<HandProbePoint>(null)
+  const punchHudComboRef = useRef<HTMLDivElement>(null)
+  const punchComboHudPrevRef = useRef(0)
+  const punchComboMirrorRef = useRef(0)
 
-  // 用 ref 保存频繁变化的 props，避免 paint 频繁重建导致渲染循环重启
-  const phaseRef = useRef(phase)
-  phaseRef.current = phase
-  const emotionRef = useRef(emotion)
-  emotionRef.current = emotion
-  const elapsedRef = useRef(elapsed)
-  elapsedRef.current = elapsed
-  const audioStartedRef = useRef(audioStarted)
-  audioStartedRef.current = audioStarted
-  const showWhiteFlashRef = useRef(showWhiteFlash)
-  showWhiteFlashRef.current = showWhiteFlash
-  const showPunchOverRef = useRef(showPunchOver)
-  showPunchOverRef.current = showPunchOver
-  const punchOverFlickerRef = useRef(punchOverFlicker)
-  punchOverFlickerRef.current = punchOverFlicker
-  const punchOverFadeRef = useRef(punchOverFade)
-  punchOverFadeRef.current = punchOverFade
-  const onGestureHitRef = useRef(onGestureHit)
-  onGestureHitRef.current = onGestureHit
+  const [audioStarted, setAudioStarted] = useState(false)
+  const [modelError, setModelError] = useState<string | null>(null)
+  const [sampleError, setSampleError] = useState<string | null>(null)
+  const [uploadErr, setUploadErr] = useState<string | null>(null)
+  const [uploadBusy, setUploadBusy] = useState(false)
+  const [clipLabel, setClipLabel] = useState(
+    '内置 · sample.wav',
+  )
+  const [gestureBanner, setGestureBanner] = useState<GestureHit | null>(null)
+  const [sequencePhase, setSequencePhase] = useState<
+    'idle' | 'scan' | 'matter'
+  >('idle')
+  const [midSequenceDraft, setMidSequenceDraft] = useState('')
+  sequencePhaseRef.current = sequencePhase
+  const audioStartedRef = useRef(false)
+  useEffect(() => {
+    audioStartedRef.current = audioStarted
+  }, [audioStarted])
 
-  // PUNCH OVER 动画时间追踪
-  const whiteFlashStartRef = useRef(0)
-  const punchOverStartRef = useRef(0)
-  const punchOverFadeStartRef = useRef(0)
+  const prevAudioStartedRef = useRef(false)
+  useEffect(() => {
+    if (audioStarted && !prevAudioStartedRef.current) {
+      onAudioPlaybackStarted?.()
+    }
+    prevAudioStartedRef.current = audioStarted
+  }, [audioStarted, onAudioPlaybackStarted])
 
-  // detectForVideo 需要严格单调递增的时间戳
-  const lastDetectTsRef = useRef(0)
+  const musicPunchGameActiveRef = useRef(musicPunchGameActive)
+  musicPunchGameActiveRef.current = musicPunchGameActive
+  punchComboMirrorRef.current = musicPunchHud?.combo ?? 0
+  /** 用户点击 STOP 后为 true：停止自动重试，直至点击预览区或上传新音频 */
+  const userStoppedBgRef = useRef(false)
 
-  useEffect(() => { if (showWhiteFlash) whiteFlashStartRef.current = performance.now() }, [showWhiteFlash])
-  useEffect(() => { if (showPunchOver) punchOverStartRef.current = performance.now() }, [showPunchOver])
-  useEffect(() => { if (punchOverFade) punchOverFadeStartRef.current = performance.now() }, [punchOverFade])
+  useEffect(() => {
+    const c = musicPunchHud?.combo
+    if (c === undefined) {
+      punchComboHudPrevRef.current = 0
+      return
+    }
+    const prev = punchComboHudPrevRef.current
+    let clearTimer: ReturnType<typeof window.setTimeout> | undefined
+    const el = punchHudComboRef.current
+    if (c > prev && c > 0 && el) {
+      el.classList.remove('is-combo-pop', 'is-combo-break')
+      requestAnimationFrame(() => {
+        el.classList.add('is-combo-pop')
+      })
+      clearTimer = window.setTimeout(() => {
+        el.classList.remove('is-combo-pop')
+      }, 420)
+    } else if (c === 0 && prev > 0 && el) {
+      el.classList.remove('is-combo-pop')
+      el.classList.add('is-combo-break')
+      clearTimer = window.setTimeout(() => {
+        el.classList.remove('is-combo-break')
+      }, 300)
+    }
+    punchComboHudPrevRef.current = c
+    return () => {
+      if (clearTimer != null) window.clearTimeout(clearTimer)
+    }
+  }, [musicPunchHud?.combo])
 
-  // 初始化 MediaPipe HandLandmarker
+  useEffect(() => {
+    if (!musicPunchHitTick) return
+    const hud = punchHudRef.current
+    const host = canvasHostRef.current
+    if (hud) {
+      hud.classList.remove('is-beat-hit-pop')
+      requestAnimationFrame(() => {
+        hud.classList.add('is-beat-hit-pop')
+      })
+    }
+    if (host) {
+      host.classList.remove('is-particle-hit-rumble')
+      requestAnimationFrame(() => {
+        host.classList.add('is-particle-hit-rumble')
+      })
+    }
+    const tHud = window.setTimeout(() => {
+      hud?.classList.remove('is-beat-hit-pop')
+    }, 560)
+    const tRumble = window.setTimeout(() => {
+      host?.classList.remove('is-particle-hit-rumble')
+    }, 400)
+    return () => {
+      window.clearTimeout(tHud)
+      window.clearTimeout(tRumble)
+    }
+  }, [musicPunchHitTick])
+
+  useEffect(() => {
+    audioRef.current = new SampleLoopController()
+    return () => {
+      audioRef.current?.dispose()
+      audioRef.current = null
+    }
+  }, [])
+
+  const tryStartAudio = useCallback(async () => {
+    if (audioStartedRef.current || userStoppedBgRef.current) return
+    const ctrl = audioRef.current
+    if (!ctrl) return
+    try {
+      await resumeAudioContext()
+      await ctrl.start()
+      audioStartedRef.current = true
+      setAudioStarted(true)
+      setSampleError(null)
+    } catch (e) {
+      audioStartedRef.current = false
+      setSampleError(
+        e instanceof Error
+          ? e.message
+          : '背景乐启动失败，将自动重试；若已点 // STOP_AUDIO 请再点预览区恢复。',
+      )
+    }
+  }, [])
+
+  useEffect(() => {
+    void tryStartAudio()
+  }, [tryStartAudio])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (userStoppedBgRef.current || audioStartedRef.current) return
+      void tryStartAudio()
+    }, 2200)
+    return () => window.clearInterval(id)
+  }, [tryStartAudio])
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return
+      if (userStoppedBgRef.current || audioStartedRef.current) return
+      void tryStartAudio()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [tryStartAudio])
+
+  /** 任意一次点击/按键作为用户手势，再试解锁 Web Audio（与自动重试配合） */
+  useEffect(() => {
+    const onWake = () => {
+      if (userStoppedBgRef.current || audioStartedRef.current) return
+      void tryStartAudio()
+    }
+    window.addEventListener('pointerdown', onWake, { capture: true })
+    window.addEventListener('keydown', onWake, { capture: true })
+    return () => {
+      window.removeEventListener('pointerdown', onWake, { capture: true })
+      window.removeEventListener('keydown', onWake, { capture: true })
+    }
+  }, [tryStartAudio])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        console.log('[GestureStage] 正在加载 MediaPipe HandLandmarker...')
-        const fileset = await FilesetResolver.forVisionTasks(WASM_BASE)
-        const lm = await HandLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: HAND_MODEL, delegate: 'GPU' },
-          runningMode: 'VIDEO',
-          numHands: 2,
-        })
-        if (!cancelled) {
-          landmarkerRef.current = lm
-          console.log('[GestureStage] HandLandmarker 加载成功 ✓')
-        } else {
-          lm.close()
-        }
+        const lm = await createRobustHandLandmarker()
+        if (!cancelled) landmarkerRef.current = lm
+        else lm.close()
       } catch (e) {
-        console.error('[GestureStage] HandLandmarker 加载失败:', e)
-        if (!cancelled) onError?.(e instanceof Error ? e.message : String(e))
+        if (!cancelled) {
+          setModelError(e instanceof Error ? e.message : String(e))
+        }
       }
     })()
     return () => {
@@ -484,186 +737,568 @@ export function GestureStage({
       landmarkerRef.current?.close()
       landmarkerRef.current = null
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 自适应 canvas 尺寸
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const obs = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect
-      sizeRef.current = { w: Math.round(width), h: Math.round(height) }
-    })
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [])
+    const video = videoRef.current
+    if (!video) return
+    let stream: MediaStream | null = null
+    let cancelled = false
 
-  // 绘制函数 — 所有频繁变化的值均从 ref 读取，避免 useCallback 重建
-  const paint = useCallback(
-    (result: HandLandmarkerResult | null) => {
-      const canvas = canvasRef.current
-      if (!canvas) return
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-
-      // 从 ref 读取当前值
-      const curPhase = phaseRef.current
-      const curEmotion = emotionRef.current
-      const curElapsed = elapsedRef.current
-      const curAudioStarted = audioStartedRef.current
-      const curShowWhiteFlash = showWhiteFlashRef.current
-      const curShowPunchOver = showPunchOverRef.current
-      const curPunchOverFlicker = punchOverFlickerRef.current
-      const curPunchOverFade = punchOverFadeRef.current
-
-      const { w, h } = sizeRef.current
-      const dpr = window.devicePixelRatio || 1
-      canvas.width = w * dpr
-      canvas.height = h * dpr
-      ctx.scale(dpr, dpr)
-
-      const fr = frameRef.current++
-
-      // 1. 背景
-      drawBackground(ctx, w, h)
-      drawFloatingGlyphs(ctx, w, h, fr)
-
-      // 2. 系统信息
-      drawSystemInfo(ctx, curPhase, curEmotion, curElapsed)
-
-      // 3. 根据 phase 画不同内容
-      if (curPhase === 'idle') {
-        // drawDotMatrixTitle(ctx, w, h, fr)  // 暂时关闭点阵文字水印
-        drawIdleRing(ctx, w, h, fr)
-        drawBottomHint(ctx, w, h, '// INPUT EMOTION BELOW TO BEGIN')
-      } else if (curPhase === 'loading') {
-        drawLoadingState(ctx, w, h, fr, curEmotion)
-      } else if (curPhase === 'active') {
-        const hands = result?.landmarks ?? []
-        const audio = audioRef.current
-
-        if (hands.length > 0 && audio && curAudioStarted) {
-          const primary = pickPrimaryHand(hands)
-          if (primary) {
-            // 绘制所有手的骨架
-            for (const lm of hands) {
-              drawHandSkeleton(ctx, lm, w, h)
-            }
-
-            // 捏合距离 → playbackRate
-            const thumb = primary[THUMB]
-            const indexFinger = primary[INDEX]
-            const radius = Math.hypot(
-              thumb.x * w - indexFinger.x * w,
-              thumb.y * h - indexFinger.y * h,
-            )
-            drawPinchConstruct(ctx, thumb, indexFinger, radius, w, h)
-
-            const minR = 20, maxR = 220
-            let playbackRate = mapRange(radius, minR, maxR, 0.5, 2.0)
-            playbackRate = constrain(playbackRate, 0.5, 2.0)
-
-            // 手掌开合 → pitch 倍率
-            const oRaw = openness(primary)
-            palmOpenSmoothRef.current = palmOpenSmoothRef.current * 0.74 + oRaw * 0.26
-            const palmMul = palmPitchFactorFromOpenness(palmOpenSmoothRef.current)
-
-            // 手势事件检测
-            let hit: GestureHit | null = null
-            try {
-              hit = gestureDetectorRef.current.push(primary, performance.now())
-            } catch {
-              gestureDetectorRef.current.reset()
-            }
-            if (hit) {
-              lastGestureCueRef.current = { labelZh: hit.labelZh, labelEn: hit.labelEn, t: performance.now() }
-              onGestureHitRef.current?.(hit)
-              if (hit.signal !== 'grab') {
-                audio.triggerGestureFx(hit.signal)
-              }
-            }
-
-            // 应用手势到音频
-            audio.applyGesture(playbackRate, palmMul)
-
-            // 绘制数据 HUD
-            drawDataHUD(ctx, thumb, indexFinger, radius, playbackRate, palmOpenSmoothRef.current, palmMul, w, h)
-          }
-        } else {
-          // 无手势时重置
-          gestureDetectorRef.current.reset()
-          palmOpenSmoothRef.current = 0.155
-          if (audio && curAudioStarted) {
-            audio.applyGesture(undefined)
-          }
-          drawSignalNull(ctx, h)
-        }
-
-        // 手势事件提示
-        const cue = lastGestureCueRef.current
-        if (cue) {
-          drawGestureCue(ctx, w, cue, performance.now() - cue.t)
-        }
-
-        // 注：泡泡模块将在这里接入
-      }
-
-      // 4. 白闪
-      if (curShowWhiteFlash) {
-        const wfElapsed = performance.now() - whiteFlashStartRef.current
-        drawWhiteFlash(ctx, w, h, Math.min(wfElapsed / 600, 1))
-      }
-
-      // 5. PUNCH OVER
-      if (curShowPunchOver) {
-        const poElapsed = performance.now() - punchOverStartRef.current
-        const fadeP = curPunchOverFade ? Math.min((performance.now() - punchOverFadeStartRef.current) / 1500, 1) : 0
-        drawPunchOver(ctx, w, h, Math.min(poElapsed / 5000, 1), curPunchOverFlicker, curPunchOverFade, fadeP)
-      }
-
-      // 6. over 状态
-      if (curPhase === 'over' && !curShowPunchOver) {
-        drawBottomHint(ctx, w, h, '// SESSION ENDED · ENTER NEW EMOTION TO RESTART')
-      }
-    },
-    // 依赖只有稳定的 ref，不再包含 elapsed/phase 等频繁变化的值
-    [audioRef],
-  )
-
-  // 渲染循环 — 稳定运行，不会因 props 变化而重启
-  useEffect(() => {
-    const loop = () => {
-      const video = videoRef.current
-      const marker = landmarkerRef.current
-
-      let result: HandLandmarkerResult | null = null
-      if (video && marker && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-        // 确保时间戳严格单调递增，避免 MediaPipe 抛出异常
-        const now = performance.now()
-        const ts = now > lastDetectTsRef.current ? now : lastDetectTsRef.current + 1
-        lastDetectTsRef.current = ts
-        try {
-          result = marker.detectForVideo(video, ts)
-        } catch (e) {
-          // 仅在非时间戳错误时记录
-          console.warn('[GestureStage] detectForVideo error:', e)
-        }
-      }
-
-      paint(result)
-      rafRef.current = requestAnimationFrame(loop)
+    const isBenignPlayInterrupt = (e: unknown) => {
+      if (e instanceof DOMException && e.name === 'AbortError') return true
+      const msg =
+        e instanceof Error ? e.message : typeof e === 'string' ? e : ''
+      return /interrupted|AbortError|new load request/i.test(msg)
     }
 
+    void (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: W },
+            height: { ideal: H },
+            facingMode: { ideal: 'user' },
+          },
+          audio: false,
+        })
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop())
+          return
+        }
+        video.srcObject = stream
+        await video.play()
+        await resumeAudioContext()
+        if (!cancelled && !userStoppedBgRef.current) void tryStartAudio()
+      } catch (e) {
+        if (cancelled || isBenignPlayInterrupt(e)) return
+        setModelError(e instanceof Error ? e.message : String(e))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      stream?.getTracks().forEach((t) => t.stop())
+      video.pause()
+      video.srcObject = null
+      video.removeAttribute('src')
+    }
+  }, [tryStartAudio])
+
+  useEffect(() => {
+    if (!textPhysicsJob) return
+    const { text } = textPhysicsJob
+    setSequencePhase('scan')
+
+    let matterTeardown: (() => void) | undefined
+    let matterTimeoutId: ReturnType<typeof window.setTimeout> | undefined
+
+    const scanTimerId = window.setTimeout(() => {
+      setSequencePhase('matter')
+      onEmotionScanComplete?.()
+      const main = canvasRef.current
+      const matterEl = matterCanvasRef.current
+      const ww = main?.width || W
+      const hh = main?.height || H
+      if (matterEl && ww > 0 && hh > 0) {
+        matterEl.width = ww
+        matterEl.height = hh
+        matterTeardown = startTextMatterWorld(
+          matterEl,
+          text,
+          () => matterProbeRef.current,
+        )
+      }
+      matterTimeoutId = window.setTimeout(() => {
+        matterTeardown?.()
+        matterTeardown = undefined
+        const mc = matterCanvasRef.current
+        if (mc) {
+          mc.getContext('2d')?.clearRect(0, 0, mc.width, mc.height)
+        }
+        setSequencePhase('idle')
+        onTextPhysicsComplete?.()
+      }, TEXT_MATTER_MS)
+    }, TEXT_SCAN_MS)
+
+    return () => {
+      window.clearTimeout(scanTimerId)
+      if (matterTimeoutId !== undefined) window.clearTimeout(matterTimeoutId)
+      matterTeardown?.()
+      const mc = matterCanvasRef.current
+      if (mc) {
+        mc.getContext('2d')?.clearRect(0, 0, mc.width, mc.height)
+      }
+      setSequencePhase('idle')
+    }
+  }, [textPhysicsJob?.id, onTextPhysicsComplete, onEmotionScanComplete])
+
+  const paint = useCallback(
+    (result: HandLandmarkerResult | null, audioOn: boolean) => {
+      const c = canvasRef.current
+      const video = videoRef.current
+      if (!c || !video) return
+      const ctx = c.getContext('2d')
+      if (!ctx) return
+      const w = W
+      const h = H
+      c.width = w
+      c.height = h
+
+      ctx.fillStyle = `rgb(${PAL.bg[0]}, ${PAL.bg[1]}, ${PAL.bg[2]})`
+      ctx.fillRect(0, 0, w, h)
+
+      const videoReady =
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        video.videoWidth > 0
+
+      if (videoReady) {
+        ctx.filter = 'grayscale(1) contrast(1.08) brightness(0.88)'
+        ctx.save()
+        ctx.translate(w, 0)
+        ctx.scale(-1, 1)
+        ctx.drawImage(video, 0, 0, w, h)
+        ctx.restore()
+        ctx.filter = 'none'
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.22)'
+        ctx.fillRect(0, 0, w, h)
+      } else {
+        drawCameraWaiting(ctx, w, h)
+      }
+
+      const fr = frameRef.current++
+      if (videoReady) {
+        drawGlitchField(ctx, fr, w, h)
+        drawIdleGeometry(ctx, fr, w, h)
+      }
+      drawSystemHeader(ctx)
+      if (!audioOn) drawStartPrompt(ctx, w, h)
+
+      const hands = mirrorLandmarksFromCamera(result?.landmarks)
+
+      if (sequencePhaseRef.current === 'matter' && hands.length > 0) {
+        const primary = pickPrimaryHand(hands)
+        if (primary) {
+          const tip = primary[INDEX]
+          matterProbeRef.current = { x: tip.x * w, y: tip.y * h }
+        } else {
+          matterProbeRef.current = null
+        }
+      } else {
+        matterProbeRef.current = null
+      }
+
+      if (hands.length > 0) {
+        for (const lm of hands) {
+          drawHandConnections(ctx, lm, w, h)
+          drawHandThin(ctx, lm, w, h)
+          const thumb = lm[THUMB_TIP]
+          const indexFinger = lm[INDEX_TIP]
+          if (thumb && indexFinger) {
+            drawPinchConstruct(ctx, thumb, indexFinger, w, h)
+          }
+        }
+
+        const primary = pickPrimaryHand(hands)
+        const thumb = primary?.[THUMB_TIP]
+        const indexFinger = primary?.[INDEX_TIP]
+
+        const wantGesture =
+          !!primary &&
+          (Boolean(audioRef.current && audioOn) ||
+            musicPunchGameActiveRef.current)
+
+        if (wantGesture && primary) {
+          let punchGameSphereHit = false
+          let hit: GestureHit | null = null
+          try {
+            hit = gestureDetectorRef.current.push(primary, performance.now())
+          } catch {
+            gestureDetectorRef.current.reset()
+          }
+
+          if (hit?.signal === 'punch') {
+            schedulePunchViewportPulse(
+              wrapRef.current,
+              punchViewportFxTimerRef,
+              punchComboMirrorRef.current,
+            )
+          }
+
+          if (
+            hit &&
+            musicPunchGameActiveRef.current &&
+            musicPunchHandleRef?.current &&
+            (hit.signal === 'punch' || hit.signal === 'chop')
+          ) {
+            const tip = primary[INDEX]
+            punchGameSphereHit = musicPunchHandleRef.current.tryPunch({
+              x: tip.x * 2 - 1,
+              y: -(tip.y * 2 - 1),
+            })
+          }
+
+          if (hit && audioRef.current && audioOn) {
+            const t = performance.now()
+            lastGestureCueRef.current = {
+              labelZh: hit.labelZh,
+              labelEn: hit.labelEn,
+              t,
+            }
+            setGestureBanner(hit)
+            if (hit.signal !== 'grab') {
+              audioRef.current.triggerGestureFx(hit.signal)
+            }
+            if (
+              (hit.signal === 'punch' || hit.signal === 'chop') &&
+              audioRef.current.isLoopPlaying()
+            ) {
+              const ac = audioRef.current
+              const inGame = musicPunchGameActiveRef.current
+              const bump = inGame
+                ? punchGameSphereHit
+                : isWithinBeatWindow(
+                    ac.getLoopPlaybackPositionSec(),
+                    ac.getBufferDurationSec(),
+                    ac.getLoopBeatTimesSec(),
+                    BEAT_PITCH_BUMP_WINDOW_SEC,
+                  )
+              if (bump) ac.bumpBeatPitch(0.5)
+            }
+          }
+        } else {
+          gestureDetectorRef.current.reset()
+        }
+
+        if (thumb && indexFinger) {
+          const pinchCx = ((thumb.x + indexFinger.x) / 2) * w
+          const pinchCy = ((thumb.y + indexFinger.y) / 2) * h
+          const radiusPx = Math.hypot(
+            (thumb.x - indexFinger.x) * w,
+            (thumb.y - indexFinger.y) * h,
+          )
+          const ctrl = audioRef.current
+          const playbackRate =
+            audioOn && ctrl ? ctrl.getUiPlaybackRate() : 1
+          const volume =
+            audioOn && ctrl?.isLoopPlaying() ? PLAYBACK_GAIN : 0
+          drawTraceHUD(
+            ctx,
+            pinchCx,
+            pinchCy,
+            radiusPx,
+            playbackRate,
+            volume,
+            w,
+            h,
+          )
+        }
+      } else {
+        gestureDetectorRef.current.reset()
+        drawSignalNull(ctx, h)
+      }
+
+      const tipGlowNow = performance.now()
+      const tipBuckets = fingertipGlowTrailsRef.current
+      const maxAge = TIP_GLOW_TRAIL_MAX_AGE_MS
+      for (let hi = 0; hi < MAX_HANDS_FOR_TIP_GLOW; hi++) {
+        for (const trail of tipBuckets[hi]!) {
+          while (
+            trail.length > 0 &&
+            tipGlowNow - trail[0]!.t > maxAge
+          ) {
+            trail.shift()
+          }
+        }
+      }
+      const nHands = Math.min(hands.length, MAX_HANDS_FOR_TIP_GLOW)
+      for (let hi = nHands; hi < MAX_HANDS_FOR_TIP_GLOW; hi++) {
+        for (const trail of tipBuckets[hi]!) trail.length = 0
+      }
+      for (let hi = 0; hi < nHands; hi++) {
+        const lm = hands[hi]!
+        const tipsForHand = tipBuckets[hi]!
+        for (let ti = 0; ti < FINGER_TIP_INDICES.length; ti++) {
+          const idx = FINGER_TIP_INDICES[ti]!
+          const tip = lm[idx]
+          if (!tip) continue
+          const px = tip.x * w
+          const py = tip.y * h
+          const trail = tipsForHand[ti]!
+          const last = trail[trail.length - 1]
+          const d2 = last
+            ? (px - last.x) ** 2 + (py - last.y) ** 2
+            : 1e6
+          if (!last || d2 > 9 || tipGlowNow - last.t > 38) {
+            trail.push({ x: px, y: py, t: tipGlowNow })
+            while (trail.length > TIP_GLOW_TRAIL_MAX_POINTS) trail.shift()
+          }
+        }
+      }
+      for (let hi = 0; hi < MAX_HANDS_FOR_TIP_GLOW; hi++) {
+        for (const trail of tipBuckets[hi]!) {
+          drawFingerTipGlowTrail(ctx, trail, tipGlowNow)
+        }
+      }
+
+      const cue = lastGestureCueRef.current
+      if (cue) {
+        drawGestureCue(ctx, w, cue, performance.now() - cue.t)
+      }
+
+      const ac = audioRef.current
+      const punchGameOn = musicPunchGameActiveRef.current
+      if (ac) {
+        if (audioOn) {
+          ac.updateHandSpatialFx(
+            hands.length > 0 ? pickPrimaryHand(hands) : null,
+          )
+          ac.applyGesture()
+        } else {
+          ac.updateHandSpatialFx(null)
+        }
+      }
+      if (ac && audioOn && ac.isLoopPlaying()) {
+        ac.advanceLoopPlaybackClock()
+        let dur = ac.getBufferDurationSec()
+        if (dur <= 0.05) dur = BEAT_GUIDE_FALLBACK_DURATION_SEC
+        beatGestureHintRef.current?.sync(
+          ac.getLoopPlaybackPositionSec(),
+          dur,
+          true,
+          ac.getPlaybackSyncGeneration(),
+        )
+      } else if (punchGameOn) {
+        const dur = BEAT_GUIDE_FALLBACK_DURATION_SEC
+        const t =
+          (performance.now() / 1000) % dur
+        beatGestureHintRef.current?.sync(
+          t,
+          dur,
+          true,
+          BEAT_HINT_SYNC_WALLCLOCK,
+        )
+      } else {
+        beatGestureHintRef.current?.sync(0, 0, false, 0)
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const loop = () => {
+      const v = videoRef.current
+      const marker = landmarkerRef.current
+      if (!v) {
+        rafRef.current = requestAnimationFrame(loop)
+        return
+      }
+      let result: HandLandmarkerResult | null = null
+      if (
+        marker &&
+        v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        v.videoWidth > 0
+      ) {
+        result = marker.detectForVideo(v, performance.now())
+      }
+      paint(result, audioStarted)
+      rafRef.current = requestAnimationFrame(loop)
+    }
     rafRef.current = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [paint, videoRef])
+  }, [audioStarted, paint])
+
+  const handleFileChange = (list: FileList | null) => {
+    const file = list?.[0]
+    if (!file) return
+    setUploadErr(null)
+    setUploadBusy(true)
+    void (async () => {
+      try {
+        const ctrl = audioRef.current
+        if (!ctrl) return
+        userStoppedBgRef.current = false
+        await ctrl.loadFromFile(file)
+        setClipLabel(`本地 · ${file.name}`)
+        void tryStartAudio()
+      } catch (e) {
+        setUploadErr(e instanceof Error ? e.message : String(e))
+      } finally {
+        setUploadBusy(false)
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    })()
+  }
+
+  const onStopPlayback = () => {
+    userStoppedBgRef.current = true
+    audioRef.current?.stop()
+    audioStartedRef.current = false
+    setAudioStarted(false)
+  }
+
+  const onPreviewPointerDown = () => {
+    if (audioStartedRef.current) return
+    userStoppedBgRef.current = false
+    void tryStartAudio()
+  }
+
+  const submitMidSequenceText = () => {
+    const t = midSequenceDraft.trim()
+    if (!t || !onMidSequencePhysicsText) return
+    onMidSequencePhysicsText(t)
+    setMidSequenceDraft('')
+  }
+
+  const onMidSequenceKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return
+    if (e.shiftKey) return
+    e.preventDefault()
+    submitMidSequenceText()
+  }
 
   return (
-    <section className="app-stage" ref={containerRef}>
-      <div className="stage-canvas-wrap">
-        <canvas ref={canvasRef} className="gesture-canvas" />
+    <div ref={wrapRef} className="gesture-wrap">
+      {(modelError || sampleError || uploadErr) && (
+        <div className="gesture-errors">
+          {modelError && <p>// ERR · VISION: {modelError}</p>}
+          {sampleError && <p>// ERR · AUDIO: {sampleError}</p>}
+          {uploadErr && <p>// ERR · UPLOAD: {uploadErr}</p>}
+        </div>
+      )}
+      <div className="gesture-toolbar">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="gesture-file-input"
+          accept="audio/*,.wav,.mp3,.mpeg,.ogg,.webm,audio/wav"
+          aria-label="选择本地音频文件"
+          onChange={(e) => handleFileChange(e.target.files)}
+        />
+        <button
+          type="button"
+          className="gesture-upload-btn"
+          disabled={uploadBusy}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploadBusy ? '// LOADING…' : '// UPLOAD_LOCAL_AUDIO'}
+        </button>
+        <button
+          type="button"
+          className="gesture-stop-btn"
+          disabled={!audioStarted}
+          onClick={onStopPlayback}
+          aria-label="停止背景音乐循环"
+        >
+          // STOP_AUDIO
+        </button>
+        <span className="gesture-clip-label">{clipLabel}</span>
+        <span className="gesture-signal-broadcast" aria-live="polite">
+          {gestureBanner
+            ? `// LAST_GESTURE · ${gestureBanner.labelZh} · ${gestureBanner.labelEn}`
+            : '// LAST_GESTURE · —'}
+        </span>
       </div>
-    </section>
+      <div
+        ref={canvasHostRef}
+        className={`gesture-canvas-host${!audioStarted ? ' is-bg-paused' : ''}`}
+        aria-label="手势与视频预览"
+        onPointerDown={onPreviewPointerDown}
+        role="presentation"
+      >
+        <video
+          ref={videoRef}
+          className="gesture-video"
+          muted
+          playsInline
+          autoPlay
+        />
+        <canvas ref={canvasRef} className="gesture-canvas" />
+        <BeatGestureHint
+          ref={beatGestureHintRef}
+          hitTick={musicPunchHitTick}
+        />
+        <canvas
+          ref={matterCanvasRef}
+          width={W}
+          height={H}
+          className={`gesture-matter-canvas${sequencePhase === 'matter' ? ' is-live' : ''}${SHOW_TEXT_SEQUENCE_VISUALS ? '' : ' is-visual-suppressed'}`}
+          aria-hidden
+        />
+        {musicPunchHud ? (
+          <div
+            ref={punchHudRef}
+            className="music-punch-hud"
+            aria-live="polite"
+          >
+            <span className="music-punch-hud-time">
+              // {musicPunchHud.timeLeft}s
+            </span>
+            <div
+              ref={punchHudComboRef}
+              className={`music-punch-hud-combo${
+                musicPunchHud.combo >= 20
+                  ? ' is-combo-tier-s'
+                  : musicPunchHud.combo >= 12
+                    ? ' is-combo-tier-a'
+                    : musicPunchHud.combo >= 6
+                      ? ' is-combo-tier-b'
+                      : ''
+              }${musicPunchHud.combo <= 0 ? ' is-combo-idle' : ''}`}
+            >
+              <span className="music-punch-hud-combo-label">COMBO</span>
+              <span className="music-punch-hud-combo-value">
+                ×{musicPunchHud.combo}
+              </span>
+            </div>
+            <span className="music-punch-hud-score">
+              SCORE · {musicPunchHud.score}
+            </span>
+          </div>
+        ) : null}
+        {musicPunchHandleRef ? (
+          <ParticlePunchOverlay
+            ref={musicPunchHandleRef}
+            visible={musicPunchGameActive}
+            onSuccessfulHit={onMusicPunchSuccessfulHit}
+          />
+        ) : null}
+        {SHOW_TEXT_SEQUENCE_VISUALS &&
+          sequencePhase === 'scan' &&
+          textPhysicsJob ? (
+          <TechnoScanOverlay hint={textPhysicsJob.text} />
+        ) : null}
+      </div>
+      {onMidSequencePhysicsText &&
+        (sequencePhase === 'scan' || sequencePhase === 'matter') && (
+          <form
+            className="gesture-mid-sequence-form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              submitMidSequenceText()
+            }}
+          >
+            <span className="gesture-mid-sequence-hint">
+              // 序列进行中 · 可继续输入
+            </span>
+            <input
+              type="text"
+              className="gesture-mid-sequence-input"
+              value={midSequenceDraft}
+              onChange={(e) => setMidSequenceDraft(e.target.value)}
+              onKeyDown={onMidSequenceKeyDown}
+              placeholder="补充或替换… Enter 发送（与下方对话区相同）"
+              maxLength={4000}
+              aria-label="扫描或落体中途输入文字"
+            />
+            <button type="submit" className="gesture-mid-sequence-send">
+              // SEND
+            </button>
+          </form>
+        )}
+    </div>
   )
 }

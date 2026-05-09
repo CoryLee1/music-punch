@@ -584,3 +584,1027 @@
 }
 
 /* PUNCH OVER 和白闪效果已移至 GestureStage canvas 内绘制 */
+
+/* ========== gesture-bundle (from integration kit) ========== */
+.gesture-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 640px;
+  margin-inline: auto;
+  transform-origin: center center;
+}
+
+@keyframes punch-viewport-zoom {
+  0% {
+    transform: scale(1) translate(0, 0) translateZ(0);
+    filter: brightness(1) blur(0) contrast(1);
+  }
+  11% {
+    transform: scale(1.05) translate(-5px, 4px) translateZ(0);
+    filter: brightness(1.1) blur(4px) contrast(1.04);
+  }
+  22% {
+    transform: scale(1.14) translate(4px, -5px) translateZ(0);
+    filter: brightness(1.18) blur(6.5px) contrast(1.08);
+  }
+  38% {
+    transform: scale(1.07) translate(-3px, 2px) translateZ(0);
+    filter: brightness(1.08) blur(2.4px) contrast(1.04);
+  }
+  100% {
+    transform: scale(1) translate(0, 0) translateZ(0);
+    filter: brightness(1) blur(0) contrast(1);
+  }
+}
+
+.gesture-wrap.is-punch-viewport-zoom {
+  will-change: transform, filter;
+  animation: punch-viewport-zoom 0.46s cubic-bezier(0.14, 1.15, 0.3, 1);
+}
+
+.gesture-wrap.is-punch-viewport-zoom.is-punch-viewport-combo-mid {
+  animation-name: punch-viewport-zoom-mid;
+}
+
+.gesture-wrap.is-punch-viewport-zoom.is-punch-viewport-combo-high {
+  animation-name: punch-viewport-zoom-high;
+}
+
+@keyframes punch-viewport-zoom-mid {
+  0% {
+    transform: scale(1) translate(0, 0) translateZ(0);
+    filter: brightness(1) blur(0) contrast(1);
+  }
+  10% {
+    transform: scale(1.06) translate(-6px, 5px) translateZ(0);
+    filter: brightness(1.12) blur(4.5px) contrast(1.05);
+  }
+  21% {
+    transform: scale(1.17) translate(5px, -6px) translateZ(0);
+    filter: brightness(1.22) blur(7px) contrast(1.1);
+  }
+  36% {
+    transform: scale(1.09) translate(-2px, 3px) translateZ(0);
+    filter: brightness(1.1) blur(2.8px) contrast(1.05);
+  }
+  100% {
+    transform: scale(1) translate(0, 0) translateZ(0);
+    filter: brightness(1) blur(0) contrast(1);
+  }
+}
+
+@keyframes punch-viewport-zoom-high {
+  0% {
+    transform: scale(1) translate(0, 0) translateZ(0);
+    filter: brightness(1) blur(0) contrast(1);
+  }
+  9% {
+    transform: scale(1.08) translate(-7px, 6px) translateZ(0);
+    filter: brightness(1.16) blur(5px) contrast(1.06);
+  }
+  19% {
+    transform: scale(1.22) translate(6px, -7px) translateZ(0);
+    filter: brightness(1.28) blur(8.5px) contrast(1.12);
+  }
+  34% {
+    transform: scale(1.1) translate(-3px, 3px) translateZ(0);
+    filter: brightness(1.12) blur(3px) contrast(1.06);
+  }
+  100% {
+    transform: scale(1) translate(0, 0) translateZ(0);
+    filter: brightness(1) blur(0) contrast(1);
+  }
+}
+
+.gesture-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-size: 11px;
+}
+
+.gesture-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.gesture-upload-btn {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: rgba(246, 246, 248, 0.95);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset;
+}
+
+.gesture-upload-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gesture-upload-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gesture-start-btn {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: rgba(246, 246, 248, 0.95);
+  background: rgba(60, 200, 140, 0.12);
+  border: 1px solid rgba(100, 220, 170, 0.55);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset;
+}
+
+.gesture-start-btn:hover:not(:disabled) {
+  background: rgba(60, 200, 140, 0.2);
+  border-color: rgba(120, 235, 190, 0.7);
+}
+
+.gesture-start-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: transparent;
+}
+
+.gesture-stop-btn {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: rgba(246, 246, 248, 0.92);
+  background: transparent;
+  border: 1px solid rgba(255, 120, 130, 0.45);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35) inset;
+}
+
+.gesture-stop-btn:hover:not(:disabled) {
+  background: rgba(255, 100, 110, 0.08);
+  border-color: rgba(255, 140, 148, 0.55);
+}
+
+.gesture-stop-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.gesture-clip-label {
+  color: rgba(255, 255, 255, 0.42);
+  max-width: min(420px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gesture-signal-broadcast {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: right;
+}
+
+.gesture-errors {
+  font-size: 11px;
+  color: #ff6b7a;
+  line-height: 1.5;
+}
+
+.gesture-errors p {
+  margin: 0;
+}
+
+.gesture-canvas-host {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  margin-inline: auto;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6) inset;
+  cursor: default;
+  border-radius: 2px;
+  aspect-ratio: 640 / 480;
+  transform-origin: center center;
+}
+
+@keyframes particle-hit-rumble {
+  0% {
+    transform: translate(0, 0);
+  }
+  11% {
+    transform: translate(-7px, 5px);
+  }
+  24% {
+    transform: translate(8px, -6px);
+  }
+  38% {
+    transform: translate(-6px, -5px);
+  }
+  52% {
+    transform: translate(5px, 4px);
+  }
+  68% {
+    transform: translate(-3px, 2px);
+  }
+  85% {
+    transform: translate(2px, -2px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+.gesture-canvas-host.is-particle-hit-rumble {
+  animation: particle-hit-rumble 0.38s cubic-bezier(0.18, 0.92, 0.34, 1);
+}
+
+.gesture-canvas-host.is-bg-paused {
+  cursor: pointer;
+}
+
+.gesture-canvas-host:focus {
+  outline: none;
+}
+
+.particle-punch-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/** 粒子球被打散瞬间：预览区内强光爆发（叠在 WebGL 之上） */
+.particle-punch-hit-flash {
+  position: absolute;
+  inset: -14%;
+  z-index: 8;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.88);
+  transform-origin: 50% 45%;
+  background:
+    radial-gradient(
+      ellipse 68% 64% at 50% 42%,
+      rgba(255, 255, 255, 1) 0%,
+      rgba(255, 254, 248, 0.88) 14%,
+      rgba(255, 230, 175, 0.48) 36%,
+      rgba(255, 140, 70, 0.22) 52%,
+      transparent 74%
+    ),
+    radial-gradient(
+      circle at 48% 46%,
+      rgba(255, 255, 255, 0.78) 0%,
+      transparent 48%
+    );
+  mix-blend-mode: screen;
+  filter: saturate(1.2);
+}
+
+@keyframes particle-hit-flash-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.75);
+    filter: saturate(1.15) brightness(1) contrast(1);
+  }
+  8% {
+    opacity: 1;
+    transform: scale(1.08);
+    filter: saturate(1.5) brightness(1.95) contrast(1.12);
+  }
+  22% {
+    opacity: 1;
+    transform: scale(1.26);
+    filter: saturate(1.4) brightness(1.55) contrast(1.08);
+  }
+  40% {
+    opacity: 0.72;
+    transform: scale(1.32);
+    filter: saturate(1.2) brightness(1.2) contrast(1.04);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+    filter: saturate(1) brightness(1) contrast(1);
+  }
+}
+
+.particle-punch-hit-flash.is-active {
+  animation: particle-hit-flash-burst 0.38s cubic-bezier(0.08, 1, 0.22, 1) forwards;
+}
+
+.beat-gesture-hint {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+.beat-gesture-hint-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  border-radius: 2px;
+  background: rgba(6, 6, 10, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+}
+
+.beat-gesture-hint-stack {
+  position: relative;
+  width: 118px;
+  height: 118px;
+  flex-shrink: 0;
+}
+
+.beat-gesture-hint-stack .beat-gesture-hint-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+}
+
+@keyframes beat-hit-pop {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  32% {
+    transform: scale(1.88);
+    filter: brightness(1.35);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+.beat-gesture-hint-inner.is-beat-hit-pop .beat-gesture-hint-count-now {
+  animation: beat-hit-pop 0.55s cubic-bezier(0.28, 1.55, 0.45, 1);
+}
+
+.beat-gesture-hint-inner.is-beat-hit-pop .beat-gesture-hint-mode {
+  animation: beat-hit-pop 0.55s cubic-bezier(0.28, 1.55, 0.45, 1);
+}
+
+/** 音乐节拍前进时（「/10」左边数字随拍递增这一刻）强调脉冲，方便观众对拍 */
+@keyframes beat-sync-pop {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  28% {
+    transform: scale(1.72);
+    filter: brightness(1.28);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+.beat-gesture-hint-count-now.is-beat-sync-pop {
+  animation: beat-sync-pop 0.42s cubic-bezier(0.25, 1.5, 0.4, 1);
+}
+
+.beat-gesture-hint-label {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  color: rgba(252, 252, 255, 0.88);
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
+.beat-gesture-hint-mode {
+  font-size: 19px;
+  font-weight: 700;
+  opacity: 0.95;
+  letter-spacing: 0.08em;
+  transform-origin: 0% 50%;
+}
+
+.beat-gesture-hint-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.beat-gesture-hint-count-now {
+  display: inline-block;
+  min-width: 1.15em;
+  text-align: center;
+  font-size: 38px;
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 1),
+    0 2px 4px rgba(0, 0, 0, 0.9),
+    0 0 28px rgba(255, 90, 70, 0.55);
+  transform-origin: 50% 60%;
+}
+
+.beat-gesture-hint-count-sep {
+  font-size: 26px;
+  font-weight: 600;
+  opacity: 0.6;
+}
+
+.beat-gesture-hint-count-max {
+  font-size: 23px;
+  font-weight: 700;
+  opacity: 0.82;
+}
+
+.particle-punch-overlay canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.music-punch-hud {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: rgba(252, 252, 255, 0.92);
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+}
+
+.music-punch-hud-time {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.music-punch-hud-score {
+  font-size: 19px;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.music-punch-hud-combo {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 6px 12px 6px 14px;
+  margin-bottom: 2px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transform-origin: 100% 50%;
+}
+
+.music-punch-hud-combo.is-combo-idle .music-punch-hud-combo-value {
+  opacity: 0.42;
+}
+
+.music-punch-hud-combo-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: rgba(255, 240, 220, 0.75);
+}
+
+.music-punch-hud-combo-value {
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 1),
+    0 0 18px rgba(255, 120, 90, 0.35);
+}
+
+.music-punch-hud-combo.is-combo-tier-b .music-punch-hud-combo-value {
+  color: #ffe8a8;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 1),
+    0 0 22px rgba(255, 200, 80, 0.55);
+}
+
+.music-punch-hud-combo.is-combo-tier-a .music-punch-hud-combo-value {
+  color: #ffc896;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 1),
+    0 0 26px rgba(255, 150, 60, 0.65);
+}
+
+.music-punch-hud-combo.is-combo-tier-s .music-punch-hud-combo-value {
+  color: #fff;
+  text-shadow:
+    0 0 3px rgba(80, 20, 0, 0.95),
+    0 0 28px rgba(255, 90, 40, 0.85),
+    0 0 42px rgba(255, 140, 80, 0.45);
+}
+
+@keyframes combo-hud-pop {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  35% {
+    transform: scale(1.14);
+    filter: brightness(1.2);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+.music-punch-hud-combo.is-combo-pop {
+  animation: combo-hud-pop 0.38s cubic-bezier(0.24, 1.45, 0.4, 1);
+}
+
+.music-punch-hud-combo.is-combo-break {
+  animation: combo-hud-break 0.3s ease-out;
+}
+
+@keyframes combo-hud-break {
+  0% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  40% {
+    opacity: 0.65;
+    filter: brightness(0.75) saturate(0.5);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.music-punch-hud.is-beat-hit-pop .music-punch-hud-score {
+  display: inline-block;
+  animation: beat-hit-pop 0.55s cubic-bezier(0.28, 1.55, 0.45, 1);
+  transform-origin: 100% 50%;
+}
+
+.punch-round-start-btn {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 5px 10px;
+  margin-right: 8px;
+  cursor: pointer;
+  color: rgba(246, 246, 248, 0.95);
+  background: rgba(255, 80, 80, 0.12);
+  border: 1px solid rgba(255, 120, 120, 0.45);
+  border-radius: 2px;
+}
+
+.punch-round-start-btn:hover:not(:disabled) {
+  background: rgba(255, 80, 80, 0.2);
+}
+
+.punch-round-start-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.punch-game-end-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.punch-game-end-card {
+  max-width: min(420px, 92vw);
+  padding: 28px 26px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+  background: rgba(12, 12, 16, 0.94);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.punch-end-heading {
+  margin: 0 0 16px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.punch-final-score {
+  margin: 0 0 8px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.punch-final-combo {
+  margin: 0 0 12px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: rgba(255, 200, 140, 0.92);
+  text-shadow: 0 0 20px rgba(255, 120, 60, 0.35);
+}
+
+.punch-end-hint {
+  margin: 0 0 22px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: left;
+}
+
+.punch-end-dismiss {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  padding: 8px 20px;
+  cursor: pointer;
+  color: rgba(246, 246, 248, 0.95);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 2px;
+}
+
+.punch-end-dismiss:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gesture-mid-sequence-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  width: 100%;
+  max-width: 640px;
+  margin-inline: auto;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.38);
+  box-sizing: border-box;
+}
+
+.gesture-mid-sequence-hint {
+  flex: 1 1 100%;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.gesture-mid-sequence-input {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(246, 246, 248, 0.95);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 2px;
+}
+
+.gesture-mid-sequence-input::placeholder {
+  color: rgba(255, 255, 255, 0.32);
+}
+
+.gesture-mid-sequence-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.gesture-mid-sequence-send {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  flex-shrink: 0;
+  padding: 7px 12px;
+  cursor: pointer;
+  color: rgba(246, 246, 248, 0.95);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 2px;
+}
+
+.gesture-mid-sequence-send:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gesture-video {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gesture-canvas {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  image-rendering: auto;
+}
+
+.gesture-matter-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  pointer-events: none;
+  display: block;
+  opacity: 0;
+  image-rendering: crisp-edges;
+}
+
+.gesture-matter-canvas.is-live {
+  opacity: 1;
+}
+
+.gesture-matter-canvas.is-visual-suppressed {
+  opacity: 0 !important;
+  visibility: hidden;
+}
+
+/* TECHNO_SCAN：暗色半透明叠层，主体为大字形块（无蓝白底/无网格） */
+.techno-scan-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  background: rgba(2, 2, 5, 0.78);
+  color: rgba(246, 246, 248, 0.95);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  overflow: hidden;
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+}
+
+.techno-scan-overlay * {
+  box-sizing: border-box;
+}
+
+.techno-scan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  flex-shrink: 0;
+}
+
+.techno-scan-title {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: #f6f6f8;
+}
+
+.techno-scan-sub {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  opacity: 0.72;
+  margin-top: 3px;
+  color: rgba(246, 246, 248, 0.8);
+}
+
+.techno-scan-version {
+  font-size: 9px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(246, 246, 248, 0.9);
+}
+
+.techno-scan-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 160px;
+}
+
+.techno-scan-glyph-stage {
+  position: absolute;
+  left: 8px;
+  right: 138px;
+  top: 50%;
+  transform: translateY(-52%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.techno-scan-buffer-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
+}
+
+.techno-scan-buffer-label {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: rgba(246, 246, 248, 0.55);
+}
+
+.techno-scan-buffer-dim {
+  font-size: 9px;
+  opacity: 0.5;
+}
+
+.techno-scan-glyph-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 4px;
+}
+
+.techno-glyph-cell {
+  width: 60px;
+  height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(6, 6, 10, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.techno-glyph-cell--pulse {
+  border-color: rgba(248, 248, 250, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(248, 248, 250, 0.35);
+}
+
+.techno-glyph-char {
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fafafd;
+  letter-spacing: 0;
+}
+
+.techno-scan-floating-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 14px;
+  margin-top: 4px;
+}
+
+.techno-scan-float-tag {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  color: #f6f6f8;
+  background: rgba(20, 20, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+}
+
+.techno-scan-chromatic {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 122px;
+  padding: 8px 9px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 9px;
+}
+
+.techno-scan-chromatic-title {
+  font-weight: 600;
+  margin-bottom: 7px;
+  letter-spacing: 0.06em;
+  font-size: 9px;
+  color: rgba(246, 246, 248, 0.8);
+}
+
+.techno-scan-chromatic ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.techno-scan-chromatic li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.techno-scan-chromatic code {
+  font-size: 9px;
+  color: rgba(230, 230, 235, 0.92);
+}
+
+.techno-swatch {
+  width: 11px;
+  height: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  flex-shrink: 0;
+}
+
+.techno-scan-processing {
+  margin-top: 10px;
+  padding: 9px 26px;
+  background: rgba(248, 248, 250, 0.12);
+  color: #f6f6f8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+}
+
+.techno-scan-log {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 130px;
+  font-size: 10px;
+  color: rgba(200, 200, 208, 0.88);
+  line-height: 1.5;
+  max-width: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+.techno-scan-log-line {
+  opacity: 0.95;
+  margin-bottom: 2px;
+}
+
+.techno-scan-footer {
+  padding: 9px 12px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(246, 246, 248, 0.92);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}

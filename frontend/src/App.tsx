@@ -3,12 +3,15 @@ import { createPortal } from 'react-dom'
 import { GestureStage } from './components/GestureStage'
 import { ControlPanel } from './components/ControlPanel'
 import { EmotionInput } from './components/EmotionInput'
-import { SampleLoopController } from './lib/samplePlayer'
 import type { AppPhase } from './components/ControlPanel'
 import type { GestureHit } from './lib/handGestures'
+import type { ParticlePunchHandle } from './components/ParticlePunchOverlay'
 import './App.css'
 
-const LOADING_DURATION = 2500 // ms，模拟 loading
+const PUNCH_GAME_SEC = 60
+const PUNCH_COMBO_BREAK_MS = 1600
+
+type TextPhysicsJob = { id: number; text: string }
 
 /* ───── 深色背景动态字符 ───── */
 const BG_GLYPHS = '○◎□⊠×+✦·—/⊕◇⊹∴Δ⟨⟩■▪▫◆◈⬡⬢▲▽⊗⊙≡≈∞∅∂∇⌘⌥⏎⏏⎔⎕⌭◌△▷◁▹◃⊿⋮⋯'
@@ -36,7 +39,6 @@ function DarkBgCanvas() {
       canvas.height = h * dpr
       ctx.scale(dpr, dpr)
 
-      // 清除
       ctx.clearRect(0, 0, w, h)
 
       const fr = frameRef.current++
@@ -120,27 +122,31 @@ function DarkBgCanvas() {
 }
 
 export default function App() {
-  /* ───── 全局状态 ───── */
+  /* ───── 原有 UI 状态 ───── */
   const [apiState, setApiState] = useState<'idle' | 'ok' | 'err'>('idle')
   const [phase, setPhase] = useState<AppPhase>('idle')
   const [emotion, setEmotion] = useState('')
-  const [elapsed, setElapsed] = useState(0) // 已运行秒数（正计时）
+  const [elapsed, setElapsed] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const [cameraReady, setCameraReady] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
-  const [showWhiteFlash, setShowWhiteFlash] = useState(false)
-  const [showPunchOver, setShowPunchOver] = useState(false)
-  const [punchOverFlicker, setPunchOverFlicker] = useState(false)
-  const [punchOverFade, setPunchOverFade] = useState(false)
-
-  /* ───── 音频相关 ───── */
   const [audioStarted, setAudioStarted] = useState(false)
   const [clipLabel, setClipLabel] = useState('内置 · sample.wav')
   const [gestureBanner, setGestureBanner] = useState<GestureHit | null>(null)
 
+  /* ───── Punch 游戏状态 ───── */
+  const punchHandleRef = useRef<ParticlePunchHandle>(null)
+  const comboBreakTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const [punchPhase, setPunchPhase] = useState<'idle' | 'running' | 'ended'>('idle')
+  const [punchScore, setPunchScore] = useState(0)
+  const [punchHitTick, setPunchHitTick] = useState(0)
+  const [punchCombo, setPunchCombo] = useState(0)
+  const [punchComboMax, setPunchComboMax] = useState(0)
+  const [punchTimeLeft, setPunchTimeLeft] = useState(PUNCH_GAME_SEC)
+  const [textPhysicsJob, setTextPhysicsJob] = useState<TextPhysicsJob | null>(null)
+
   /* ───── refs ───── */
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const audioRef = useRef<SampleLoopController | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
@@ -160,29 +166,16 @@ export default function App() {
     return () => { cancelled = true }
   }, [])
 
-  /* ───── 初始化音频控制器 ───── */
-  useEffect(() => {
-    audioRef.current = new SampleLoopController()
-    return () => {
-      audioRef.current?.dispose()
-      audioRef.current = null
-    }
-  }, [])
-
-  /* ───── 初始化摄像头 ───── */
+  /* ───── 初始化摄像头（供右侧面板用） ───── */
   useEffect(() => {
     let cancelled = false
-
     const initCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 480, facingMode: 'user' },
           audio: false,
         })
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop())
-          return
-        }
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return }
         streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
@@ -190,91 +183,123 @@ export default function App() {
           setCameraReady(true)
         }
       } catch (e) {
-        if (!cancelled) {
-          setErrors((prev) => [...prev.slice(-4), `摄像头: ${e instanceof Error ? e.message : String(e)}`])
-        }
+        if (!cancelled) setErrors((prev) => [...prev.slice(-4), `摄像头: ${e instanceof Error ? e.message : String(e)}`])
       }
     }
-
     void initCamera()
-
-    return () => {
-      cancelled = true
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-    }
+    return () => { cancelled = true; streamRef.current?.getTracks().forEach((t) => t.stop()) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /* ───── 正计时逻辑（无时间限制） ───── */
+  /* ───── 正计时 ───── */
   useEffect(() => {
     if (phase !== 'active' || isPaused) {
       if (timerRef.current) clearInterval(timerRef.current)
       return
     }
-
-    timerRef.current = setInterval(() => {
-      setElapsed((prev) => prev + 0.1)
-    }, 100)
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
+    timerRef.current = setInterval(() => setElapsed((prev) => prev + 0.1), 100)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [phase, isPaused])
 
-  /* ───── 结束流程 ───── */
-  const triggerEnding = useCallback(() => {
-    setPhase('ending')
-    audioRef.current?.stop()
-    setAudioStarted(false)
-
-    setShowWhiteFlash(true)
-    setTimeout(() => setShowWhiteFlash(false), 600)
-
-    setTimeout(() => {
-      setShowPunchOver(true)
-      setTimeout(() => setPunchOverFlicker(true), 400)
-      setTimeout(() => {
-        setPunchOverFade(true)
-        setTimeout(() => {
-          setShowPunchOver(false)
-          setPunchOverFlicker(false)
-          setPunchOverFade(false)
-          setPhase('over')
-        }, 1500)
-      }, 3000)
-    }, 800)
+  /* ───── Punch 游戏逻辑 ───── */
+  const startPunchRound = useCallback(() => {
+    const tid = comboBreakTimerRef.current
+    if (tid != null) window.clearTimeout(tid)
+    comboBreakTimerRef.current = null
+    setPunchScore(0)
+    setPunchTimeLeft(PUNCH_GAME_SEC)
+    setPunchHitTick(0)
+    setPunchCombo(0)
+    setPunchComboMax(0)
+    setPunchPhase('running')
   }, [])
+
+  const onPunchHit = useCallback(() => {
+    setPunchScore((s) => s + 1)
+    setPunchHitTick((k) => k + 1)
+    setPunchCombo((c) => {
+      const n = c + 1
+      setPunchComboMax((m) => Math.max(m, n))
+      return n
+    })
+    const prev = comboBreakTimerRef.current
+    if (prev != null) window.clearTimeout(prev)
+    comboBreakTimerRef.current = window.setTimeout(() => {
+      comboBreakTimerRef.current = null
+      setPunchCombo(0)
+    }, PUNCH_COMBO_BREAK_MS)
+  }, [])
+
+  // Punch 回合倒计时
+  useEffect(() => {
+    if (punchPhase !== 'running') return
+    const t0 = Date.now()
+    const id = window.setInterval(() => {
+      const el = Math.floor((Date.now() - t0) / 1000)
+      const left = Math.max(0, PUNCH_GAME_SEC - el)
+      setPunchTimeLeft(left)
+      if (left <= 0) { setPunchPhase('ended'); window.clearInterval(id) }
+    }, 260)
+    return () => window.clearInterval(id)
+  }, [punchPhase])
+
+  useEffect(() => {
+    if (punchPhase === 'running') return
+    const tid = comboBreakTimerRef.current
+    if (tid != null) window.clearTimeout(tid)
+    comboBreakTimerRef.current = null
+  }, [punchPhase])
+
+  const dismissPunchEnded = useCallback(() => setPunchPhase('idle'), [])
+
+  const onTextPhysicsComplete = useCallback(() => setTextPhysicsJob(null), [])
+
+  const submitPhysicsText = useCallback((raw: string) => {
+    const text = raw.trim()
+    if (!text) return
+    setTextPhysicsJob({ id: Date.now(), text })
+    punchHandleRef.current?.appendUserTextParticles(text)
+  }, [])
+
+  const onEmotionScanComplete = useCallback(() => {
+    if (punchPhase !== 'running') startPunchRound()
+  }, [punchPhase, startPunchRound])
+
+  const onAudioPlaybackStarted = useCallback(() => {
+    setAudioStarted(true)
+    if (phase === 'idle') {
+      setPhase('active')
+      setElapsed(0)
+      setIsPaused(false)
+    }
+    if (punchPhase !== 'running') startPunchRound()
+  }, [phase, punchPhase, startPunchRound])
 
   /* ───── 错误管理 ───── */
   const addError = useCallback((msg: string) => {
     setErrors((prev) => [...prev.slice(-4), msg])
   }, [])
 
-  /* ───── 手动停止（触发 PUNCH OVER 结束动画） ───── */
+  /* ───── 手动停止 ───── */
   const handleStop = useCallback(() => {
-    if (phase === 'active') triggerEnding()
-  }, [phase, triggerEnding])
+    if (phase === 'active') {
+      setPhase('over')
+      setAudioStarted(false)
+    }
+  }, [phase])
 
-  /* ───── 情绪提交 → loading → active ───── */
+  /* ───── 情绪提交 → 发送文字到物理引擎 ───── */
   const handleEmotionSubmit = useCallback(
-    async (text: string) => {
+    (text: string) => {
       setEmotion(text)
-      setPhase('loading')
-
-      try {
-        await audioRef.current?.start()
-        setAudioStarted(true)
-      } catch (e) {
-        addError(`音频: ${e instanceof Error ? e.message : String(e)}`)
-      }
-
-      setTimeout(() => {
+      submitPhysicsText(text)
+      if (phase === 'idle') {
         setPhase('active')
         setElapsed(0)
         setIsPaused(false)
-      }, LOADING_DURATION)
+      }
     },
-    [addError],
+    [phase, submitPhysicsText],
   )
 
   /* ───── 手势命中回调 ───── */
@@ -282,22 +307,8 @@ export default function App() {
     setGestureBanner(hit)
   }, [])
 
-  /* ───── 音频上传 ───── */
-  const handleAudioUpload = useCallback(async (file: File) => {
-    try {
-      const ctrl = audioRef.current
-      if (!ctrl) return
-      await ctrl.loadFromFile(file)
-      setClipLabel(`本地 · ${file.name}`)
-    } catch (e) {
-      addError(`上传: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }, [addError])
-
   /* ───── 暂停/继续 ───── */
-  const handleTogglePause = useCallback(() => {
-    setIsPaused((p) => !p)
-  }, [])
+  const handleTogglePause = useCallback(() => setIsPaused((p) => !p), [])
 
   /* ───── 重置 ───── */
   const handleReset = useCallback(() => {
@@ -306,20 +317,21 @@ export default function App() {
     setElapsed(0)
     setIsPaused(false)
     setErrors([])
-    audioRef.current?.stop()
     setAudioStarted(false)
     setGestureBanner(null)
     setClipLabel('内置 · sample.wav')
+    setPunchPhase('idle')
+    setPunchScore(0)
+    setPunchCombo(0)
+    setPunchComboMax(0)
   }, [])
 
-  const inputDisabled = phase !== 'idle'
+  const inputDisabled = phase !== 'idle' && phase !== 'over'
 
   return (
     <div className="app">
-      {/* 深色背景动态字符 */}
       <DarkBgCanvas />
 
-      {/* 错误提示 */}
       {errors.length > 0 && (
         <div className="app-errors">
           {errors.map((e, i) => (
@@ -328,22 +340,38 @@ export default function App() {
         </div>
       )}
 
+      {/* Punch 回合结束弹窗 */}
+      {punchPhase === 'ended' && (
+        <div className="punch-game-end-modal" role="dialog">
+          <div className="punch-game-end-card">
+            <h2 className="punch-end-heading">PUNCH ROUND · 结束</h2>
+            <p className="punch-final-score">得分 · {punchScore}</p>
+            <p className="punch-final-combo">最大连击 · ×{punchComboMax}</p>
+            <button type="button" className="punch-end-dismiss" onClick={dismissPunchEnded}>
+              // CLOSE
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 主内容区 */}
       <div className="app-main">
-        {/* 左侧 2/3 互动区 */}
+        {/* 左侧 2/3 互动区 — 新版 GestureStage */}
         <GestureStage
-          phase={phase}
-          emotion={emotion}
-          elapsed={elapsed}
-          videoRef={videoRef}
-          audioRef={audioRef}
-          audioStarted={audioStarted}
-          onError={addError}
-          onGestureHit={handleGestureHit}
-          showWhiteFlash={showWhiteFlash}
-          showPunchOver={showPunchOver}
-          punchOverFlicker={punchOverFlicker}
-          punchOverFade={punchOverFade}
+          textPhysicsJob={textPhysicsJob}
+          onTextPhysicsComplete={onTextPhysicsComplete}
+          onMidSequencePhysicsText={submitPhysicsText}
+          onEmotionScanComplete={onEmotionScanComplete}
+          onAudioPlaybackStarted={onAudioPlaybackStarted}
+          musicPunchGameActive={punchPhase === 'running'}
+          musicPunchHandleRef={punchHandleRef}
+          onMusicPunchSuccessfulHit={onPunchHit}
+          musicPunchHud={
+            punchPhase === 'running'
+              ? { timeLeft: punchTimeLeft, score: punchScore, combo: punchCombo }
+              : null
+          }
+          musicPunchHitTick={punchHitTick}
         />
 
         {/* 右侧 1/3 控制面板 */}

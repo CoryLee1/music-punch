@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" fill="#e6e6e4"/>
+  <rect width="32" height="32" fill="#020203"/>
   <path
     fill="none"
-    stroke="#1c1c1e"
-    stroke-width="1"
+    stroke="#f6f6f8"
+    stroke-width="0.9"
     d="M8 16h16M16 8v16M10 10l12 12M22 10L10 22"
   />
 </svg>
