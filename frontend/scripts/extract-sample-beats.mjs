@@ -10,6 +10,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const wavPath = path.join(__dirname, '../public/sample.wav')
 const outPath = path.join(__dirname, '../src/data/sample-beats.json')
 
+/**
+ * 自动 onset 后再稀疏：1 = 保持算法输出；2 = 每隔一拍保留（主拍更慢；仅当算法输出 ≥6 个拍点时启用）
+ */
+const DISPLAY_BEAT_STRIDE = 2
+
 function readWavMonoPcm(buf) {
   let off = 12
   let sampleRate = 44100
@@ -143,8 +148,10 @@ function detectOnsets(samples, sampleRate) {
   const variance =
     flux.reduce((a, b) => a + (b - mean) ** 2, 0) / flux.length
   const std = Math.sqrt(variance)
-  const thresh = mean + 1.65 * std
-  const minHop = Math.floor(0.22 * sampleRate / hop)
+  /** 略提高阈值，少抓细碎 onset；仍偏快时改用下方 DISPLAY_BEAT_STRIDE */
+  const thresh = mean + 1.72 * std
+  const minPeakSpacingSec = 0.26
+  const minHop = Math.floor(minPeakSpacingSec * sampleRate / hop)
   /** @type {number[]} */
   const peaks = []
   for (let i = 2; i < flux.length - 2; i++) {
@@ -170,6 +177,23 @@ function detectOnsets(samples, sampleRate) {
     flux,
   )
 
+  if (
+    DISPLAY_BEAT_STRIDE > 1 &&
+    beatTimesSec.length >= DISPLAY_BEAT_STRIDE * 3
+  ) {
+    const decimated = beatTimesSec.filter(
+      (_, i) => i % DISPLAY_BEAT_STRIDE === 0,
+    )
+    if (decimated.length >= 3) {
+      beatTimesSec = decimated
+    }
+  }
+
+  /** 去掉贴循环结尾的拍点，避免与下一圈头拍掐在一起 */
+  beatTimesSec = beatTimesSec.filter(
+    (t) => t >= 0 && t < durationSec - 0.16,
+  )
+
   /** @type {number[]} */
   const intervals = []
   for (let i = 1; i < Math.min(beatTimesSec.length, 48); i++) {
@@ -177,7 +201,10 @@ function detectOnsets(samples, sampleRate) {
   }
   intervals.sort((a, b) => a - b)
   const med = intervals.length ? intervals[Math.floor(intervals.length / 2)] : 0
-  const bpmEstimate = med > 0.04 ? Math.round(60 / med) : 0
+  const bpmEstimate =
+    med > 0.04
+      ? Math.min(200, Math.max(35, Math.round(60 / med)))
+      : 0
   return { beatTimesSec, bpmEstimate }
 }
 
