@@ -120,8 +120,8 @@ function tipsLineDeviation(lm: HandLM[]): number {
   return dev / 4
 }
 
-/** 四指尖共线：再放宽一档，CHOP 更容易成立 */
-const CHOP_LINE_DEV_MAX = 0.078
+/** 四指尖共线：略放宽，CHOP 更容易触发 */
+const CHOP_LINE_DEV_MAX = 0.09
 
 /** 刀手姿态：多指伸直 + 四指尖近似一线 + 张开度中等 */
 export function chopPoseScore(lm: HandLM[]): number {
@@ -129,8 +129,8 @@ export function chopPoseScore(lm: HandLM[]): number {
   if (ext < 2) return 0
   const dev = tipsLineDeviation(lm)
   const o = openness(lm)
-  if (o < 0.043 || o > 0.44) return 0
-  if (ext < 3 && dev > 0.046) return 0
+  if (o < 0.036 || o > 0.48) return 0
+  if (ext < 3 && dev > 0.052) return 0
   if (dev > CHOP_LINE_DEV_MAX) return 0
   const lineQ = Math.min(1, (CHOP_LINE_DEV_MAX - dev) / CHOP_LINE_DEV_MAX)
   const extQ =
@@ -148,9 +148,9 @@ type FrameSample = {
   fist: boolean
 }
 
-const HISTORY_MAX = 24
-/** 略短冷却，CHOP/PUNCH 连做时更跟手 */
-const COOLDOWN_MS = 275
+const HISTORY_MAX = 30
+/** 全局冷却略拉长，快摆时减轻 PUNCH/CHOP 连环误触 */
+const COOLDOWN_MS = 320
 
 /**
  * 基于短序列与简单运动学触发三种离散事件；带冷却避免连发。
@@ -183,11 +183,14 @@ export class GestureEventDetector {
     if (this.history.length > HISTORY_MAX) this.history.shift()
 
     if (nowMs - this.lastEmitAt < COOLDOWN_MS) return null
-    if (this.history.length < 4) return null
+    if (this.history.length < 5) return null
 
-    /** 击打玩法优先：先判拳/刀手，避免「张→收」被 grab 抢走 */
+    /**
+     * CHOP 优先于 PUNCH：刀手势与握拳在快动作下易混，先判 CHOP 再收紧 PUNCH。
+     * PUNCH 仅认「外冲」（手掌在画面里变大），避免收拳/后撤 span 变小误触发。
+     */
     const hit =
-      this.tryPunch() ?? this.tryChop() ?? this.tryGrab()
+      this.tryChop() ?? this.tryPunch() ?? this.tryGrab()
     if (hit) this.lastEmitAt = nowMs
     return hit
   }
@@ -215,38 +218,44 @@ export class GestureEventDetector {
     return null
   }
 
-  /** 冲拳：较短窗口 + 与刀手姿态互斥，降低延迟与误判 */
+  /** 冲拳：须整段保持拳形 + 手掌在画面内明显变大（靠近镜头/冲出），忌「越收越小」误触 */
   private tryPunch(): GestureHit | null {
     const h = this.history
-    if (h.length < 6) return null
-    const last = h.slice(-6)
-    if (last.length < 6) return null
+    if (h.length < 9) return null
+    const last = h.slice(-8)
+    if (last.length < 8) return null
 
     const fistCount = last.filter((f) => f.fist).length
-    /** 提高「整段像拳」比例，减轻误触 PUNCH */
-    if (fistCount < 5) return null
+    /** 绝大部分帧须为拳；尾帧必须仍是拳（出拳末梢） */
+    if (fistCount < 7 || !last[last.length - 1].fist) return null
 
     const tail = last[last.length - 1]!
     const chopAvg =
       last.reduce((s, f) => s + f.chop, 0) / last.length
-    /** 更像刀手时优先让给 CHOP（略收紧，减轻误拳） */
-    if (tail.chop > 0.15 || chopAvg > 0.095) return null
+    if (tail.chop > 0.12 || chopAvg > 0.072) return null
 
-    const span0 = last[0].span
-    const span1 = tail.span
-    if (span0 <= 0.025) return null
+    const spanEarly =
+      (last[0].span + last[1].span + last[2].span) / 3
+    const spanLate =
+      (last[last.length - 1].span +
+        last[last.length - 2].span +
+        last[last.length - 3].span) /
+      3
+    if (spanEarly < 0.028) return null
 
-    const ratio = span1 / span0
-    const mid = last[Math.floor(last.length / 2)].span
-    const valley =
-      mid < span0 * 0.98 &&
-      span1 < span0 * 0.93 &&
-      span0 - Math.min(mid, span1) > span0 * 0.035
+    /** 关键：后半程掌宽须高于前半程（外冲/靠近镜头），排除收拳 span 回落 */
+    if (spanLate < spanEarly * 1.028) return null
 
-    /** 需更明显收回或更深的「谷形」 */
-    const sharpShrink = ratio < 0.936
-    if (sharpShrink || valley) return hitFromSignal('punch')
-    return null
+    /** 手腕在窗内有可见位移，避免静止误触 */
+    let wristTravel = 0
+    for (let i = 1; i < last.length; i++) {
+      const dx = last[i].wrist.x - last[i - 1].wrist.x
+      const dy = last[i].wrist.y - last[i - 1].wrist.y
+      wristTravel += Math.hypot(dx, dy)
+    }
+    if (wristTravel < 0.0075) return null
+
+    return hitFromSignal('punch')
   }
 
   /** 切：较短窗口 + 排除「大半程握拳」的误触 */
@@ -256,14 +265,13 @@ export class GestureEventDetector {
     const win = h.slice(-6)
     if (win.length < 6) return null
 
-    /** 整窗「像拳」不超过 4 帧才允许 CHOP（与 PUNCH 五拳窗错开） */
-    if (win.filter((f) => f.fist).length > 4) return null
+    /** 与 PUNCH 的 7/8 拳窗错开：允许多一帧拳影，仍挡纯冲拳 */
+    if (win.filter((f) => f.fist).length > 5) return null
 
-    const chopStrongMin = 0.12
-    const chopLooseMin = 0.065
+    const chopStrongMin = 0.078
+    const chopLooseMin = 0.038
     const chopStrong = win.filter((f) => f.chop > chopStrongMin).length
     const chopLoose = win.filter((f) => f.chop > chopLooseMin).length
-    /** 有一段刀手分 + 至少两帧弱刀手，或一帧强刀手即可 */
     if (chopStrong < 1 && chopLoose < 2) return null
 
     let maxStep = 0
@@ -287,9 +295,9 @@ export class GestureEventDetector {
     }
 
     if (
-      maxStep > 0.004 &&
-      span > 0.0135 &&
-      (peakStep > 0.0032 || maxStep > 0.0052)
+      maxStep > 0.0024 &&
+      span > 0.0085 &&
+      (peakStep > 0.002 || maxStep > 0.0036)
     ) {
       return hitFromSignal('chop')
     }

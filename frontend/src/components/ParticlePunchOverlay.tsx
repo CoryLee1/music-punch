@@ -34,7 +34,11 @@ type Props = {
 }
 
 /** 普通球清场次数达到此值后出现 Boss */
-const NORMAL_CLEARS_FOR_BOSS = 10
+const NORMAL_CLEARS_FOR_BOSS = 20
+/** 同时存在的普通粒子球数量 */
+const NORMAL_SPHERE_COUNT = 3
+/** 相邻普通球锚点在 X 上的间距（世界单位） */
+const NORMAL_SPHERE_SPACING_X = 1.05
 
 const SPHERE_R = 1.12
 const COLLIDER_R = 1.34
@@ -326,6 +330,34 @@ function playPunchSfx() {
   }
 }
 
+type SpriteRec = {
+  spr: THREE.Sprite
+  base: THREE.Vector3
+  kind: string
+  baseScaleX: number
+  baseScaleY: number
+}
+
+type PunchSphereSlot = {
+  anchor: THREE.Group
+  root: THREE.Group
+  collider: THREE.Mesh
+  dotGeo: THREE.BufferGeometry
+  dotsMat: THREE.PointsMaterial
+  dotPoints: THREE.Points
+  dotPos: Float32Array
+  baseDot: Float32Array
+  velDot: Float32Array
+  spriteList: SpriteRec[]
+  velSprite: THREE.Vector3[]
+  baseSpriteCount: number
+  driftPhase: number
+  baseX: number
+  exploding: boolean
+  explodeT: number
+  cooldownUntil: number
+}
+
 export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
   function ParticlePunchOverlay(
     { visible, onSuccessfulHit, onBossDefeated },
@@ -388,15 +420,6 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         })
       }
 
-      const collider = new THREE.Mesh(
-        new THREE.SphereGeometry(COLLIDER_R, 20, 16),
-        new THREE.MeshBasicMaterial({ visible: false }),
-      )
-      scene.add(collider)
-
-      const root = new THREE.Group()
-      scene.add(root)
-
       const raycaster = new THREE.Raycaster()
 
       const surfacePts = fibonacciSphereSurface(
@@ -406,8 +429,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
       const vc = surfacePts.length
 
       const dotIdx: number[] = []
-      const spec: { vi: number; kind: 't1' | 't2' | 'at' | 'amp' | 'pct' }[] =
-        []
+      const spec: {vi: number; kind: 't1' | 't2' | 'at' | 'amp' | 'pct'}[] = []
       for (let i = 0; i < vc; i++) {
         const c = classifyVertex(i, vc)
         if (c === 'dot') dotIdx.push(i)
@@ -418,55 +440,13 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         else spec.push({ vi: i, kind: 'pct' })
       }
 
-      const dotPos = new Float32Array(dotIdx.length * 3)
-      const baseDot = new Float32Array(dotIdx.length * 3)
-      for (let j = 0; j < dotIdx.length; j++) {
-        const vi = dotIdx[j]
-        const p = surfacePts[vi]
-        const x = p.x
-        const y = p.y
-        const z = p.z
-        baseDot[j * 3] = x
-        baseDot[j * 3 + 1] = y
-        baseDot[j * 3 + 2] = z
-        dotPos[j * 3] = x
-        dotPos[j * 3 + 1] = y
-        dotPos[j * 3 + 2] = z
-      }
-
       const dotTexture = makeSoftDotTexture()
-      const dotGeo = new THREE.BufferGeometry()
-      dotGeo.setAttribute('position', new THREE.BufferAttribute(dotPos, 3))
-
-      const dotsMat = new THREE.PointsMaterial({
-        map: dotTexture,
-        color: 0xffffff,
-        size: 0.03,
-        sizeAttenuation: true,
-        transparent: true,
-        opacity: 0.92,
-        depthWrite: false,
-        blending: THREE.NormalBlending,
-        vertexColors: false,
-      })
-      const dotPoints = new THREE.Points(dotGeo, dotsMat)
-      root.add(dotPoints)
-
       const charTex = {
         hash: makeCharTexture('#'),
         at: makeCharTexture('@'),
         amp: makeCharTexture('&'),
         pct: makeCharTexture('%'),
       }
-
-      const spriteList: {
-        spr: THREE.Sprite
-        base: THREE.Vector3
-        kind: string
-        /** 重建缩放用（user 与装饰粒共用；装饰为正方形） */
-        baseScaleX: number
-        baseScaleY: number
-      }[] = []
 
       function texFor(k: string) {
         if (k === 't1') return charTex.at
@@ -476,127 +456,248 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         return charTex.pct
       }
 
-      for (const s of spec) {
-        const vi = s.vi
-        const v = surfacePts[vi].clone()
-        const mat = new THREE.SpriteMaterial({
-          map: texFor(s.kind),
+      function createSlot(baseX: number, driftPhase: number): PunchSphereSlot {
+        const anchor = new THREE.Group()
+        anchor.position.set(baseX, 0, 0)
+        scene.add(anchor)
+
+        const root = new THREE.Group()
+        anchor.add(root)
+
+        const collider = new THREE.Mesh(
+          new THREE.SphereGeometry(COLLIDER_R, 20, 16),
+          new THREE.MeshBasicMaterial({ visible: false }),
+        )
+        anchor.add(collider)
+
+        const dotPos = new Float32Array(dotIdx.length * 3)
+        const baseDot = new Float32Array(dotIdx.length * 3)
+        for (let j = 0; j < dotIdx.length; j++) {
+          const vi = dotIdx[j]
+          const p = surfacePts[vi]
+          baseDot[j * 3] = p.x
+          baseDot[j * 3 + 1] = p.y
+          baseDot[j * 3 + 2] = p.z
+          dotPos[j * 3] = p.x
+          dotPos[j * 3 + 1] = p.y
+          dotPos[j * 3 + 2] = p.z
+        }
+        const dotGeo = new THREE.BufferGeometry()
+        dotGeo.setAttribute('position', new THREE.BufferAttribute(dotPos, 3))
+
+        const dotsMat = new THREE.PointsMaterial({
+          map: dotTexture,
+          color: 0xffffff,
+          size: 0.03,
+          sizeAttenuation: true,
           transparent: true,
-          opacity: 0.94,
+          opacity: 0.92,
           depthWrite: false,
           blending: THREE.NormalBlending,
+          vertexColors: false,
         })
-        const spr = new THREE.Sprite(mat)
-        const sc =
-          s.kind === 't1' || s.kind === 't2' ? 0.072 : 0.056
-        spr.scale.set(sc, sc, sc)
-        spr.position.copy(v)
-        root.add(spr)
-        spriteList.push({
-          spr,
-          base: v.clone(),
-          kind: s.kind,
-          baseScaleX: sc,
-          baseScaleY: sc,
-        })
+        const dotPoints = new THREE.Points(dotGeo, dotsMat)
+        root.add(dotPoints)
+
+        const spriteList: SpriteRec[] = []
+        for (const s of spec) {
+          const vi = s.vi
+          const v = surfacePts[vi].clone()
+          const mat = new THREE.SpriteMaterial({
+            map: texFor(s.kind),
+            transparent: true,
+            opacity: 0.94,
+            depthWrite: false,
+            blending: THREE.NormalBlending,
+          })
+          const spr = new THREE.Sprite(mat)
+          const sc =
+            s.kind === 't1' || s.kind === 't2' ? 0.072 : 0.056
+          spr.scale.set(sc, sc, sc)
+          spr.position.copy(v)
+          root.add(spr)
+          spriteList.push({
+            spr,
+            base: v.clone(),
+            kind: s.kind,
+            baseScaleX: sc,
+            baseScaleY: sc,
+          })
+        }
+
+        const baseSpriteCount = spriteList.length
+        const velDot = new Float32Array(dotIdx.length * 3)
+        const velSprite = spriteList.map(() => new THREE.Vector3())
+
+        return {
+          anchor,
+          root,
+          collider,
+          dotGeo,
+          dotsMat,
+          dotPoints,
+          dotPos,
+          baseDot,
+          velDot,
+          spriteList,
+          velSprite,
+          baseSpriteCount,
+          driftPhase,
+          baseX,
+          exploding: false,
+          explodeT: 0,
+          cooldownUntil: 0,
+        }
       }
 
-      const baseSpriteCount = spriteList.length
+      const halfRow =
+        ((NORMAL_SPHERE_COUNT - 1) * NORMAL_SPHERE_SPACING_X) / 2
+      const normalSlots: PunchSphereSlot[] = []
+      for (let i = 0; i < NORMAL_SPHERE_COUNT; i++) {
+        const t =
+          NORMAL_SPHERE_COUNT > 1 ? i / (NORMAL_SPHERE_COUNT - 1) : 0.5
+        const baseX = -halfRow + t * (2 * halfRow)
+        normalSlots.push(createSlot(baseX, i * 1.84 + Math.random() * 0.35))
+      }
+
+      const bossSlot = createSlot(0, 4.17)
+      bossSlot.anchor.visible = false
+
       const MAX_USER_SPRITES = 120
       const MAX_USER_TOKENS_PER_APPEND = 36
 
-      let exploding = false
-      let explodeT = 0
+      let bossFinalPendingSlot: PunchSphereSlot | null = null
       const explodeDur = 0.95
-      let cooldown = 0
       const hitCooldownMs = 520
       const bossGrowCooldownMs = 400
 
       let normalClears = 0
       let bossMode = false
       let bossHits = 0
-      let bossFinalPending = false
 
-      const velDot = new Float32Array(dotIdx.length * 3)
-      const velSprite: THREE.Vector3[] = spriteList.map(() => new THREE.Vector3())
+      const allSlots = (): PunchSphereSlot[] => [...normalSlots, bossSlot]
 
-      function removeUserSpriteAt(index: number) {
-        const rec = spriteList[index]
+      function removeUserSpriteAt(slot: PunchSphereSlot, index: number) {
+        const rec = slot.spriteList[index]
         rec.spr.material.map?.dispose()
         rec.spr.material.dispose()
-        root.remove(rec.spr)
-        spriteList.splice(index, 1)
-        velSprite.splice(index, 1)
+        slot.root.remove(rec.spr)
+        slot.spriteList.splice(index, 1)
+        slot.velSprite.splice(index, 1)
       }
 
-      function trimOldUserSprites(howManyNew: number) {
-        while (
-          spriteList.length - baseSpriteCount + howManyNew >
-          MAX_USER_SPRITES
-        ) {
-          if (spriteList.length <= baseSpriteCount) break
-          removeUserSpriteAt(baseSpriteCount)
+      function totalUserSprites(): number {
+        let n = 0
+        for (const slot of allSlots()) {
+          for (let i = slot.baseSpriteCount; i < slot.spriteList.length; i++) {
+            if (slot.spriteList[i].kind === 'user') n++
+          }
+        }
+        return n
+      }
+
+      function trimGlobally(howManyNew: number) {
+        while (totalUserSprites() + howManyNew > MAX_USER_SPRITES) {
+          let removed = false
+          for (const slot of allSlots()) {
+            if (slot.spriteList.length <= slot.baseSpriteCount) continue
+            removeUserSpriteAt(slot, slot.baseSpriteCount)
+            removed = true
+            break
+          }
+          if (!removed) break
         }
       }
 
-      function resetSphere() {
-        exploding = false
-        explodeT = 0
+      function resetSphere(slot: PunchSphereSlot) {
+        slot.exploding = false
+        slot.explodeT = 0
         for (let j = 0; j < dotIdx.length; j++) {
-          dotPos[j * 3] = baseDot[j * 3]
-          dotPos[j * 3 + 1] = baseDot[j * 3 + 1]
-          dotPos[j * 3 + 2] = baseDot[j * 3 + 2]
+          slot.dotPos[j * 3] = slot.baseDot[j * 3]
+          slot.dotPos[j * 3 + 1] = slot.baseDot[j * 3 + 1]
+          slot.dotPos[j * 3 + 2] = slot.baseDot[j * 3 + 2]
         }
-        dotGeo.attributes.position.needsUpdate = true
-        for (let i = 0; i < spriteList.length; i++) {
-          spriteList[i].spr.position.copy(spriteList[i].base)
-          const rec = spriteList[i]
+        slot.dotGeo.attributes.position.needsUpdate = true
+        for (let i = 0; i < slot.spriteList.length; i++) {
+          slot.spriteList[i].spr.position.copy(slot.spriteList[i].base)
+          const rec = slot.spriteList[i]
           const baseOp = rec.kind === 'user' ? 1 : 0.94
           ;(rec.spr.material as THREE.SpriteMaterial).opacity = baseOp
           rec.spr.scale.set(rec.baseScaleX, rec.baseScaleY, 1)
         }
-        dotsMat.opacity = 0.92
+        slot.dotsMat.opacity = 0.92
       }
 
       function enterBossMode() {
         bossMode = true
         bossHits = 0
-        bossFinalPending = false
-        root.scale.setScalar(1.24)
-        collider.scale.setScalar(1.14)
+        bossFinalPendingSlot = null
+        for (const s of normalSlots) {
+          while (s.spriteList.length > s.baseSpriteCount) {
+            removeUserSpriteAt(s, s.spriteList.length - 1)
+          }
+          s.anchor.visible = false
+          s.exploding = false
+        }
+        bossSlot.anchor.visible = true
+        bossSlot.root.scale.setScalar(1.24)
+        bossSlot.collider.scale.setScalar(1.14)
+        resetSphere(bossSlot)
       }
 
       function exitBossMode() {
         bossMode = false
         bossHits = 0
-        bossFinalPending = false
+        bossFinalPendingSlot = null
         normalClears = 0
-        root.scale.set(1, 1, 1)
-        collider.scale.set(1, 1, 1)
+        bossSlot.anchor.visible = false
+        bossSlot.root.scale.set(1, 1, 1)
+        bossSlot.collider.scale.set(1, 1, 1)
+        resetSphere(bossSlot)
+        while (bossSlot.spriteList.length > bossSlot.baseSpriteCount) {
+          removeUserSpriteAt(bossSlot, bossSlot.spriteList.length - 1)
+        }
+        for (const s of normalSlots) {
+          s.anchor.visible = true
+          resetSphere(s)
+        }
       }
 
       function resetPunchGameState() {
-        exploding = false
-        explodeT = 0
-        bossFinalPending = false
-        normalClears = 0
         bossMode = false
         bossHits = 0
-        root.scale.set(1, 1, 1)
-        collider.scale.set(1, 1, 1)
-        resetSphere()
-        cooldown = 0
+        bossFinalPendingSlot = null
+        normalClears = 0
+        bossSlot.anchor.visible = false
+        bossSlot.root.scale.set(1, 1, 1)
+        bossSlot.collider.scale.set(1, 1, 1)
+        resetSphere(bossSlot)
+        while (bossSlot.spriteList.length > bossSlot.baseSpriteCount) {
+          removeUserSpriteAt(bossSlot, bossSlot.spriteList.length - 1)
+        }
+        for (const s of normalSlots) {
+          s.anchor.visible = true
+          s.cooldownUntil = 0
+          resetSphere(s)
+          while (s.spriteList.length > s.baseSpriteCount) {
+            removeUserSpriteAt(s, s.spriteList.length - 1)
+          }
+        }
       }
 
-      function beginExplode(mode: 'normal' | 'bossFinal') {
-        exploding = true
-        explodeT = 0
-        bossFinalPending = mode === 'bossFinal'
+      function beginExplode(
+        slot: PunchSphereSlot,
+        mode: 'normal' | 'bossFinal',
+      ) {
+        slot.exploding = true
+        slot.explodeT = 0
+        if (mode === 'bossFinal') bossFinalPendingSlot = slot
         triggerHitFlash()
         playPunchSfx()
         if (mode === 'bossFinal') onBossDefeatedRef.current?.()
         else onHitRef.current?.()
 
+        const { baseDot, velDot, velSprite, spriteList } = slot
         for (let j = 0; j < dotIdx.length; j++) {
           const bx = baseDot[j * 3]
           const by = baseDot[j * 3 + 1]
@@ -619,19 +720,36 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         }
       }
 
+      function applyDrift(slot: PunchSphereSlot, now: number) {
+        const w = now * 0.00032
+        const ph = slot.driftPhase
+        slot.anchor.position.x = slot.baseX + Math.sin(w + ph) * 0.068
+        slot.anchor.position.y = Math.sin(w * 1.21 + ph * 1.86) * 0.05
+        slot.anchor.position.z = Math.cos(w * 0.87 + ph * 1.07) * 0.038
+      }
+
       apiRef.current.resetPunchRound = () => {
         resetPunchGameState()
       }
 
       apiRef.current.appendUserTextParticles = (fragment: string) => {
-        if (exploding || !fragment.trim()) return
+        if (!fragment.trim()) return
+        const targets = bossMode
+          ? bossSlot.exploding
+            ? []
+            : [bossSlot]
+          : normalSlots.filter((s) => s.anchor.visible && !s.exploding)
+        if (targets.length === 0) return
+
         const tokens = tokenizeForParticles(fragment).slice(
           0,
           MAX_USER_TOKENS_PER_APPEND,
         )
         if (tokens.length === 0) return
-        trimOldUserSprites(tokens.length)
+        trimGlobally(tokens.length)
         for (const tok of tokens) {
+          const slot = targets[Math.floor(Math.random() * targets.length)]!
+          if (slot.exploding) continue
           const tex = makeUserParticleTexture(tok)
           const mat = new THREE.SpriteMaterial({
             map: tex,
@@ -651,104 +769,131 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
           const minD = Math.max(USER_SPRITE_MIN_SEPARATION, girth * 0.5)
           const p = pickUserSpritePointOnSphere(
             SPHERE_R * 1.06,
-            spriteList,
+            slot.spriteList,
             minD,
           )
           spr.position.copy(p)
-          root.add(spr)
-          spriteList.push({
+          slot.root.add(spr)
+          slot.spriteList.push({
             spr,
             base: p.clone(),
             kind: 'user',
             baseScaleX: baseW,
             baseScaleY: baseH,
           })
-          velSprite.push(new THREE.Vector3())
+          slot.velSprite.push(new THREE.Vector3())
         }
       }
 
       apiRef.current.tryPunch = (ndc) => {
         if (!visibleRef.current) return { hit: false }
-        if (exploding) return { hit: false }
         const now = performance.now()
-        if (now < cooldown) return { hit: false }
         raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera)
-        const hits = raycaster.intersectObject(collider, false)
-        if (hits.length === 0) return { hit: false }
 
-        if (!bossMode) {
-          beginExplode('normal')
-          cooldown = now + hitCooldownMs
-          return { hit: true, kind: 'normal' }
+        if (bossMode) {
+          if (bossSlot.exploding || now < bossSlot.cooldownUntil) {
+            return { hit: false }
+          }
+          const bh = raycaster.intersectObject(bossSlot.collider, false)
+          if (bh.length === 0) return { hit: false }
+
+          if (bossHits < 4) {
+            bossHits += 1
+            triggerHitFlash()
+            playPunchSfx()
+            bossSlot.root.scale.multiplyScalar(1.1)
+            bossSlot.collider.scale.multiplyScalar(1.06)
+            bossSlot.cooldownUntil = now + bossGrowCooldownMs
+            return {
+              hit: true,
+              kind: 'bossGrow',
+              step: bossHits as 1 | 2 | 3 | 4,
+            }
+          }
+          beginExplode(bossSlot, 'bossFinal')
+          bossSlot.cooldownUntil = now + hitCooldownMs
+          return { hit: true, kind: 'bossFinal' }
         }
 
-        if (bossHits < 4) {
-          bossHits += 1
-          triggerHitFlash()
-          playPunchSfx()
-          root.scale.multiplyScalar(1.1)
-          collider.scale.multiplyScalar(1.06)
-          cooldown = now + bossGrowCooldownMs
-          return {
-            hit: true,
-            kind: 'bossGrow',
-            step: bossHits as 1 | 2 | 3 | 4,
+        let best: { slot: PunchSphereSlot; dist: number } | null = null
+        for (const s of normalSlots) {
+          if (!s.anchor.visible || s.exploding || now < s.cooldownUntil) {
+            continue
+          }
+          const h = raycaster.intersectObject(s.collider, false)
+          if (h.length > 0 && (!best || h[0]!.distance < best.dist)) {
+            best = { slot: s, dist: h[0]!.distance }
           }
         }
-
-        beginExplode('bossFinal')
-        cooldown = now + hitCooldownMs
-        return { hit: true, kind: 'bossFinal' }
+        if (!best) return { hit: false }
+        beginExplode(best.slot, 'normal')
+        best.slot.cooldownUntil = now + hitCooldownMs
+        return { hit: true, kind: 'normal' }
       }
 
       let raf = 0
       let last = performance.now()
 
+      function stepExplodeFinish(slot: PunchSphereSlot) {
+        const wasBossFinal = bossFinalPendingSlot === slot
+        resetSphere(slot)
+        slot.cooldownUntil = performance.now() + 280
+        if (wasBossFinal) {
+          bossFinalPendingSlot = null
+          exitBossMode()
+        } else if (!bossMode) {
+          normalClears += 1
+          if (normalClears >= NORMAL_CLEARS_FOR_BOSS) {
+            enterBossMode()
+          }
+        }
+      }
+
+      function tickSlot(slot: PunchSphereSlot, now: number, dt: number) {
+        if (!slot.anchor.visible) return
+        if (!slot.exploding) {
+          applyDrift(slot, now)
+          slot.root.rotation.y += dt * 0.52
+          slot.root.rotation.x =
+            Math.sin(now * 0.00031 + slot.driftPhase) * 0.09
+          return
+        }
+        slot.explodeT += dt
+        const fade = Math.max(0, 1 - slot.explodeT / explodeDur)
+
+        for (let j = 0; j < dotIdx.length; j++) {
+          slot.dotPos[j * 3] += slot.velDot[j * 3] * dt
+          slot.dotPos[j * 3 + 1] += slot.velDot[j * 3 + 1] * dt
+          slot.dotPos[j * 3 + 2] += slot.velDot[j * 3 + 2] * dt
+          slot.velDot[j * 3] *= 0.985
+          slot.velDot[j * 3 + 1] *= 0.985
+          slot.velDot[j * 3 + 2] *= 0.985
+        }
+        slot.dotGeo.attributes.position.needsUpdate = true
+        slot.dotsMat.opacity = 0.92 * fade
+
+        for (let i = 0; i < slot.spriteList.length; i++) {
+          const sp = slot.spriteList[i].spr
+          sp.position.addScaledVector(slot.velSprite[i], dt)
+          slot.velSprite[i].multiplyScalar(0.982)
+          const baseOp = slot.spriteList[i].kind === 'user' ? 1 : 0.94
+          ;(sp.material as THREE.SpriteMaterial).opacity = baseOp * fade
+          sp.scale.multiplyScalar(0.99)
+        }
+
+        if (slot.explodeT >= explodeDur) {
+          stepExplodeFinish(slot)
+        }
+      }
+
       const tick = (now: number) => {
         const dt = Math.min(0.05, (now - last) / 1000)
         last = now
 
-        if (!exploding) {
-          root.rotation.y += dt * 0.52
-          root.rotation.x = Math.sin(now * 0.00031) * 0.09
+        if (!bossMode) {
+          for (const s of normalSlots) tickSlot(s, now, dt)
         } else {
-          explodeT += dt
-          const fade = Math.max(0, 1 - explodeT / explodeDur)
-
-          for (let j = 0; j < dotIdx.length; j++) {
-            dotPos[j * 3] += velDot[j * 3] * dt
-            dotPos[j * 3 + 1] += velDot[j * 3 + 1] * dt
-            dotPos[j * 3 + 2] += velDot[j * 3 + 2] * dt
-            velDot[j * 3] *= 0.985
-            velDot[j * 3 + 1] *= 0.985
-            velDot[j * 3 + 2] *= 0.985
-          }
-          dotGeo.attributes.position.needsUpdate = true
-          dotsMat.opacity = 0.92 * fade
-
-          for (let i = 0; i < spriteList.length; i++) {
-            const sp = spriteList[i].spr
-            sp.position.addScaledVector(velSprite[i], dt)
-            velSprite[i].multiplyScalar(0.982)
-            const baseOp = spriteList[i].kind === 'user' ? 1 : 0.94
-            ;(sp.material as THREE.SpriteMaterial).opacity = baseOp * fade
-            sp.scale.multiplyScalar(0.99)
-          }
-
-          if (explodeT >= explodeDur) {
-            const wasBossFinal = bossFinalPending
-            resetSphere()
-            cooldown = performance.now() + 280
-            if (wasBossFinal) {
-              bossFinalPending = false
-              exitBossMode()
-            } else if (!bossMode) {
-              normalClears += 1
-              if (normalClears >= NORMAL_CLEARS_FOR_BOSS) {
-                enterBossMode()
-              }
-            }
-          }
+          tickSlot(bossSlot, now, dt)
         }
 
         renderer.render(scene, camera)
@@ -779,16 +924,19 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         charTex.at.dispose()
         charTex.amp.dispose()
         charTex.pct.dispose()
-        root.remove(dotPoints)
-        dotGeo.dispose()
-        dotsMat.dispose()
-        for (const s of spriteList) {
-          s.spr.material.map?.dispose()
-          s.spr.material.dispose()
-          root.remove(s.spr)
+        for (const slot of allSlots()) {
+          slot.root.remove(slot.dotPoints)
+          slot.dotGeo.dispose()
+          slot.dotsMat.dispose()
+          for (const s of slot.spriteList) {
+            s.spr.material.map?.dispose()
+            s.spr.material.dispose()
+            slot.root.remove(s.spr)
+          }
+          slot.collider.geometry.dispose()
+          ;(slot.collider.material as THREE.Material).dispose()
+          scene.remove(slot.anchor)
         }
-        collider.geometry.dispose()
-        ;(collider.material as THREE.Material).dispose()
         renderer.dispose()
         mount.removeChild(renderer.domElement)
       }
