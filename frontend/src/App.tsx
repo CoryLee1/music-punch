@@ -159,8 +159,12 @@ export default function App() {
   /* ───── 统一摄像头初始化（面板预览 + GestureStage 共享同一 stream） ───── */
   useEffect(() => {
     const video = videoRef.current
-    if (!video) return
+    if (!video) {
+      console.warn('[App] ⚠ videoRef.current 为 null，摄像头初始化跳过')
+      return
+    }
     let cancelled = false
+    console.log('[App] 开始请求摄像头权限...')
     void (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -172,11 +176,12 @@ export default function App() {
         video.srcObject = stream
         await video.play()
         if (!cancelled) {
+          console.log('[App] ✅ 摄像头就绪, videoWidth=', video.videoWidth, 'videoHeight=', video.videoHeight)
           setCameraReady(true)
           setCameraStream(stream)
         }
-      } catch {
-        /* 摄像头不可用时静默失败 */
+      } catch (err) {
+        console.error('[App] ❌ 摄像头获取失败:', err)
       }
     })()
     return () => {

@@ -613,14 +613,19 @@ export function GestureStage({
   /* ── HandLandmarker 初始化（全局单例，组件卸载时仅递减引用） ── */
   useEffect(() => {
     let cancelled = false
+    console.log('[GestureStage] 开始初始化 HandLandmarker...')
     void (async () => {
       try {
         const lm = await createRobustHandLandmarker()
         if (!cancelled) {
           landmarkerRef.current = lm
-          setModelError(null)           // 清除可能残留的错误
+          setModelError(null)
+          console.log('[GestureStage] ✅ HandLandmarker 就绪')
+        } else {
+          console.log('[GestureStage] HandLandmarker 加载完成但组件已卸载')
         }
       } catch (e) {
+        console.error('[GestureStage] ❌ HandLandmarker 加载失败:', e)
         if (!cancelled)
           setModelError(
             e instanceof Error ? e.message : String(e),
@@ -630,23 +635,28 @@ export function GestureStage({
     return () => {
       cancelled = true
       landmarkerRef.current = null
-      releaseRobustHandLandmarker()     // 递减引用计数；归零时才真正关闭
+      releaseRobustHandLandmarker()
     }
   }, [])
 
   /* ── 隐藏摄像头 — 使用外部共享的 stream，仅用于手部检测 ── */
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !cameraStream) return
+    if (!video || !cameraStream) {
+      console.log('[GestureStage] 摄像头 effect: video=', !!video, 'stream=', !!cameraStream)
+      return
+    }
     let cancelled = false
+    console.log('[GestureStage] 正在将 cameraStream 绑定到隐藏 video...')
     video.srcObject = cameraStream
     video.play().then(() => {
       if (!cancelled) {
+        console.log('[GestureStage] ✅ 隐藏 video 播放成功, videoWidth=', video.videoWidth, 'readyState=', video.readyState)
         void resumeAudioContext()
         if (!userStoppedBgRef.current) void tryStartAudio()
       }
-    }).catch(() => {
-      /* 摄像头不可用时静默失败 — 仅影响手部检测 */
+    }).catch((err) => {
+      console.error('[GestureStage] ❌ 隐藏 video 播放失败:', err)
     })
     return () => {
       cancelled = true
@@ -988,6 +998,8 @@ export function GestureStage({
 
   /* 渲染循环 — 从隐藏 video 中检测手部，结果传入 paint */
   useEffect(() => {
+    let diagLogged = false
+    let detectCount = 0
     const loop = () => {
       const v = videoRef.current
       const marker = landmarkerRef.current
@@ -998,7 +1010,28 @@ export function GestureStage({
         v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
         v.videoWidth > 0
       ) {
-        result = marker.detectForVideo(v, performance.now())
+        try {
+          result = marker.detectForVideo(v, performance.now())
+          detectCount++
+          if (detectCount === 1) {
+            console.log('[GestureStage] ✅ 首次成功检测手部, hands=', result?.landmarks?.length ?? 0)
+          }
+        } catch (e) {
+          if (!diagLogged) {
+            console.error('[GestureStage] ❌ detectForVideo 抛出异常:', e)
+            diagLogged = true
+          }
+        }
+      } else if (!diagLogged && frameRef.current > 60) {
+        // 超过 60 帧（~1 秒）仍无法检测，打印诊断
+        console.warn('[GestureStage] ⚠ 无法进入检测循环:', {
+          hasMarker: !!marker,
+          hasVideo: !!v,
+          readyState: v?.readyState ?? -1,
+          videoWidth: v?.videoWidth ?? 0,
+          srcObject: !!v?.srcObject,
+        })
+        diagLogged = true
       }
       paint(result, audioStarted)
       rafRef.current = requestAnimationFrame(loop)

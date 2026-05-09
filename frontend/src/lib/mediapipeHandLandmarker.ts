@@ -55,8 +55,11 @@ async function createHandLandmarkerOnce(): Promise<HandLandmarker> {
   for (const wasmBase of wasmBaseCandidates()) {
     let fileset: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>
     try {
+      console.log('[MediaPipe] 尝试 WASM:', wasmBase)
       fileset = await FilesetResolver.forVisionTasks(wasmBase)
+      console.log('[MediaPipe] ✅ WASM 加载成功')
     } catch (e) {
+      console.warn('[MediaPipe] ❌ WASM 加载失败:', wasmBase, e instanceof Error ? e.message : e)
       lastError = e
       continue
     }
@@ -64,7 +67,8 @@ async function createHandLandmarkerOnce(): Promise<HandLandmarker> {
     for (const modelAssetPath of modelUrlCandidates()) {
       for (const delegate of ['GPU', 'CPU'] as const) {
         try {
-          return await HandLandmarker.createFromOptions(fileset, {
+          console.log('[MediaPipe] 尝试模型:', modelAssetPath, '| delegate:', delegate)
+          const lm = await HandLandmarker.createFromOptions(fileset, {
             baseOptions: {
               modelAssetPath,
               delegate,
@@ -72,7 +76,10 @@ async function createHandLandmarkerOnce(): Promise<HandLandmarker> {
             runningMode: 'VIDEO',
             numHands: 2,
           })
+          console.log('[MediaPipe] ✅ HandLandmarker 创建成功 (delegate=' + delegate + ')')
+          return lm
         } catch (e) {
+          console.warn('[MediaPipe] ❌ 创建失败:', delegate, e instanceof Error ? e.message : e)
           lastError = e
         }
       }
