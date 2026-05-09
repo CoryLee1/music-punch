@@ -270,9 +270,6 @@ function tokenizeForParticles(fragment: string): string[] {
   return tokens
 }
 
-const latinFont = (px: number) =>
-  `200 ${px}px "IBM Plex Mono", "Space Mono", ui-monospace, monospace`
-
 const userLatinFont = (px: number) =>
   `200 ${px}px "IBM Plex Mono", "Space Mono", ui-monospace, monospace`
 

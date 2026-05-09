@@ -447,8 +447,8 @@ export function SplashScreen({ onComplete, exiting }: Props) {
     }
 
     function resize() {
-      W = canvas.width = window.innerWidth
-      H = canvas.height = window.innerHeight
+      W = canvas!.width = window.innerWidth
+      H = canvas!.height = window.innerHeight
       cx = W / 2; cy = H / 2
     }
 
