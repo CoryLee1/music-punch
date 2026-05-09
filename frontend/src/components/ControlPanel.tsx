@@ -448,12 +448,19 @@ function useCameraHUD(
 }
 
 /* ───── 音频波形可视化 ───── */
+/** 竖条柱状音频可视化 — 类似均衡器 bar 图 */
 function useWaveformVisualizer(phase: AppPhase) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const analyserRef = useRef<Tone.Analyser | null>(null)
   const rafRef = useRef<number>(0)
 
-  // 非 active 时画橙色静态水平线
+  /** 柱状图参数 */
+  const BAR_COUNT = 40
+  const BAR_GAP = 2       // px gap between bars
+  const MIN_BAR_H = 2     // 最小柱高（idle 时的静态小竖条）
+  const GAIN = 2.5
+
+  // 非 active 时画静态小竖条排列
   useEffect(() => {
     if (phase === 'active') return
     const drawIdle = () => {
@@ -469,25 +476,28 @@ function useWaveformVisualizer(phase: AppPhase) {
       const w = rect.width
       const h = rect.height
       ctx.clearRect(0, 0, w, h)
-      // 橙色水平线
-      ctx.strokeStyle = 'rgba(0, 160, 184, 0.5)'
-      ctx.lineWidth = 1.5
-      ctx.beginPath()
-      ctx.moveTo(0, h / 2)
-      ctx.lineTo(w, h / 2)
-      ctx.stroke()
+
+      const totalBarW = (w - (BAR_COUNT - 1) * BAR_GAP) / BAR_COUNT
+      const barW = Math.max(1, totalBarW)
+      const cy = h / 2
+
+      ctx.fillStyle = 'rgba(0, 160, 184, 0.35)'
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const x = i * (barW + BAR_GAP)
+        const barH = MIN_BAR_H
+        ctx.fillRect(x, cy - barH / 2, barW, barH)
+      }
     }
     drawIdle()
-    // 监听 resize 重绘
     const obs = new ResizeObserver(() => drawIdle())
     if (canvasRef.current) obs.observe(canvasRef.current)
     return () => obs.disconnect()
   }, [phase])
 
-  // active 时接入 Tone.js analyser 画实时波形
+  // active 时接入 Tone.js analyser 画竖条柱状图
   useEffect(() => {
     if (phase !== 'active') return
-    const analyser = new Tone.Analyser('waveform', 128)
+    const analyser = new Tone.Analyser('waveform', 256)
     Tone.getDestination().connect(analyser)
     analyserRef.current = analyser
 
@@ -505,33 +515,33 @@ function useWaveformVisualizer(phase: AppPhase) {
 
       const w = rect.width
       const h = rect.height
+      const cy = h / 2
 
       ctx.clearRect(0, 0, w, h)
 
       const values = analyser.getValue() as Float32Array
       const len = values.length
+      const samplesPerBar = Math.floor(len / BAR_COUNT)
 
-      // 放大信号使波形起伏更明显（clamp 到 [-1,1]）
-      const GAIN = 2.0
-      ctx.strokeStyle = 'rgba(0, 160, 184, 0.6)'
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      for (let i = 0; i < len; i++) {
-        const x = (i / (len - 1)) * w
-        const v = Math.max(-1, Math.min(1, values[i] * GAIN))
-        const y = (1 - (v + 1) / 2) * h
-        if (i === 0) ctx.moveTo(x, y)
-        else ctx.lineTo(x, y)
+      const totalBarW = (w - (BAR_COUNT - 1) * BAR_GAP) / BAR_COUNT
+      const barW = Math.max(1, totalBarW)
+
+      ctx.fillStyle = 'rgba(0, 160, 184, 0.75)'
+
+      for (let i = 0; i < BAR_COUNT; i++) {
+        // 取该段样本的 RMS
+        let sum = 0
+        const start = i * samplesPerBar
+        for (let j = start; j < start + samplesPerBar && j < len; j++) {
+          sum += values[j] * values[j]
+        }
+        const rms = Math.sqrt(sum / samplesPerBar)
+        const amplitude = Math.min(1, rms * GAIN)
+        const barH = Math.max(MIN_BAR_H, amplitude * (h * 0.9))
+
+        const x = i * (barW + BAR_GAP)
+        ctx.fillRect(x, cy - barH / 2, barW, barH)
       }
-      ctx.stroke()
-
-      // 中线
-      ctx.strokeStyle = 'rgba(0, 160, 184, 0.15)'
-      ctx.lineWidth = 0.5
-      ctx.beginPath()
-      ctx.moveTo(0, h / 2)
-      ctx.lineTo(w, h / 2)
-      ctx.stroke()
 
       rafRef.current = requestAnimationFrame(draw)
     }
@@ -587,7 +597,10 @@ export function ControlPanel({
       {/* ═══ 区域 1：动作区 ═══ */}
       <section className="panel-zone zone-gesture">
         <div className="zone-header">
-          <span className="zone-title">Gesture</span>
+          <span className="zone-title">
+            [1] Enable Camera
+            <span className="zone-title-sub">开启摄像头</span>
+          </span>
           <span className={`panel-status ${apiState === 'ok' ? 'connected' : ''}`}>
             {apiState === 'ok' ? '● ONLINE' : apiState === 'err' ? '○ OFFLINE' : '…'}
           </span>
@@ -614,9 +627,36 @@ export function ControlPanel({
               <span className="camera-off-label">Awaiting Camera</span>
             </div>
           )}
+          {/* 蓝色取景参考线叠层 */}
+          <div className="camera-reticle" aria-hidden>
+            {/* 四角括号 */}
+            <span className="reticle-corner reticle-tl" />
+            <span className="reticle-corner reticle-tr" />
+            <span className="reticle-corner reticle-bl" />
+            <span className="reticle-corner reticle-br" />
+            {/* 三等分参考线 */}
+            <span className="reticle-line reticle-h reticle-h1" />
+            <span className="reticle-line reticle-h reticle-h2" />
+            <span className="reticle-line reticle-v reticle-v1" />
+            <span className="reticle-line reticle-v reticle-v2" />
+            {/* 中心十字 */}
+            <span className="reticle-cross-h" />
+            <span className="reticle-cross-v" />
+            {/* 标签 */}
+            <span className="reticle-tag reticle-tag-tl">REC</span>
+            <span className="reticle-tag reticle-tag-br">CAM—01</span>
+          </div>
         </div>
 
-        {/* 双手势线稿图 */}
+        {/* Step 2 标题 */}
+        <div className="zone-header zone-header-inner">
+          <span className="zone-title">
+            [2] Get Ready
+            <span className="zone-title-sub">准备出击</span>
+          </span>
+        </div>
+
+        {/* 双手势像素图 */}
         <div className="panel-gesture-duo">
           <div className="gesture-line-card">
             <canvas ref={chopCanvasRef} className="gesture-line-canvas" />
@@ -640,7 +680,10 @@ export function ControlPanel({
       {/* ═══ 区域 2：音乐区 ═══ */}
       <section className="panel-zone zone-audio">
         <div className="zone-header">
-          <span className="zone-title">Audio</span>
+          <span className="zone-title">
+            [3] Follow the Beat
+            <span className="zone-title-sub">音乐画面一起</span>
+          </span>
           <span className="zone-status">{audioStarted ? '▶ PLAYING' : '■ STOPPED'}</span>
         </div>
 

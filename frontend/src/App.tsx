@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { createPortal } from 'react-dom'
+
 import { GestureStage } from './components/GestureStage'
 import { ControlPanel } from './components/ControlPanel'
 import { EmotionInput } from './components/EmotionInput'
@@ -15,114 +15,7 @@ const PUNCH_COMBO_BREAK_MS = 1600
 
 type TextPhysicsJob = { id: number; text: string }
 
-/* ───── 深色背景动态字符 ───── */
-const BG_GLYPHS = '○◎□⊠×+✦·—/⊕◇⊹∴Δ⟨⟩■▪▫◆◈⬡⬢▲▽⊗⊙≡≈∞∅∂∇⌘⌥⏎⏏⎔⎕⌭◌△▷◁▹◃⊿⋮⋯'
-
-function bgNoise(i: number, j: number, t: number) {
-  return (Math.sin(i * 12.9898 + j * 78.233 + t * 2.399) * 43758.5453) % 1
-}
-
-function DarkBgCanvas() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const rafRef = useRef(0)
-  const frameRef = useRef(0)
-
-  useEffect(() => {
-    const draw = () => {
-      const canvas = canvasRef.current
-      if (!canvas) return
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-
-      const dpr = window.devicePixelRatio || 1
-      const w = window.innerWidth
-      const h = window.innerHeight
-      canvas.width = w * dpr
-      canvas.height = h * dpr
-      ctx.scale(dpr, dpr)
-
-      ctx.clearRect(0, 0, w, h)
-
-      const fr = frameRef.current++
-      const t = fr * 0.003
-
-      // 1. 漂浮字符
-      ctx.font = '11px "Space Mono", monospace'
-      ctx.textBaseline = 'alphabetic'
-      for (let i = 0; i < 80; i++) {
-        const nx = Math.abs(bgNoise(i * 0.13 + t, i * 0.07, 0))
-        const ny = Math.abs(bgNoise(i * 0.11 + 50, i * 0.09 + t, 1))
-        const alpha = 0.03 + (i % 7) * 0.005
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
-        ctx.fillText(BG_GLYPHS.charAt(i % BG_GLYPHS.length), nx * w, ny * h)
-      }
-
-      // 2. 微弱网格
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.015)'
-      ctx.lineWidth = 0.5
-      const gridSize = 80
-      for (let x = gridSize; x < w; x += gridSize) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
-      }
-      for (let y = gridSize; y < h; y += gridSize) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke()
-      }
-
-      // 3. 缓慢移动的扫描线
-      const scanY = (fr * 0.3) % (h + 60) - 30
-      const scanGrad = ctx.createLinearGradient(0, scanY - 30, 0, scanY + 30)
-      scanGrad.addColorStop(0, 'rgba(255, 255, 255, 0)')
-      scanGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.012)')
-      scanGrad.addColorStop(1, 'rgba(255, 255, 255, 0)')
-      ctx.fillStyle = scanGrad
-      ctx.fillRect(0, scanY - 30, w, 60)
-
-      // 4. 角落标记
-      ctx.font = '8px "Space Mono", monospace'
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.04)'
-      ctx.textBaseline = 'top'
-      ctx.fillText('MUSICPUNCH_SYS v1.0', 16, 16)
-      ctx.fillText(`FR:${fr}`, 16, 28)
-
-      ctx.textAlign = 'right'
-      ctx.fillText('GESTURAL_INTERFACE', w - 16, 16)
-      ctx.textAlign = 'left'
-
-      ctx.textBaseline = 'bottom'
-      ctx.fillText('// MULTIMODAL AUDIO-VISUAL ENGINE', 16, h - 16)
-
-      ctx.textAlign = 'right'
-      const blinkOn = Math.floor(fr / 40) % 2 === 0
-      if (blinkOn) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'
-        ctx.fillText('● ACTIVE', w - 16, h - 16)
-      }
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'alphabetic'
-
-      rafRef.current = requestAnimationFrame(draw)
-    }
-
-    rafRef.current = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [])
-
-  return createPortal(
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        width: '100vw',
-        height: '100vh',
-        zIndex: 0,
-        pointerEvents: 'none',
-      }}
-    />,
-    document.body,
-  )
-}
-
+/* ───── Confetti burst on boss defeat ───── */
 function PunchConfettiBurst({
   active,
   burstKey,
@@ -184,6 +77,31 @@ function PunchConfettiBurst({
   )
 }
 
+/* ───── 装饰排版头部 ───── */
+function TypoHeader() {
+  return (
+    <header className="typo-header" aria-hidden>
+      <div className="typo-header-row typo-header-row-1">
+        <span>MUSIC PUNCH</span>
+        <span>GESTURAL INTERFACE</span>
+        <span>INTERACTIVE</span>
+        <span>700 × 1000 MM</span>
+        <span>INTRODUCTION TYPOGRAPHY</span>
+        <span>MULTIMODAL ENGINE</span>
+        <span>IT/FY/04</span>
+      </div>
+      <div className="typo-header-row typo-header-row-2">
+        <span>CHARMING LIGATURE</span>
+        <span>AUDIO-VISUAL</span>
+      </div>
+      <div className="typo-header-row typo-header-row-3">
+        IN THE INTRODUCTION COURSE AT THE DEPARTMENT TYPOGRAFIE&amp;SCHRIFTGESTALTUNG, FIRST-YEAR STUDENTS EXPLORE WHAT BALANCE MEANS WHEN TYPE STOPS BEING JUST TEXT. THEY BUILD THEIR OWN GRIDS, CRAFT ZINES THAT FLIRT WITH ORDER AND CHAOS, AND DESIGN FULL CHARACTER SETS PLUS TINY LIGATURES.
+      </div>
+    </header>
+  )
+}
+
+
 export default function App() {
   /* ───── 原有 UI 状态 ───── */
   const [apiState, setApiState] = useState<'idle' | 'ok' | 'err'>('idle')
@@ -196,10 +114,14 @@ export default function App() {
   const [clipLabel, setClipLabel] = useState('内置 · sample.wav')
   const [gestureBanner, setGestureBanner] = useState<GestureHit | null>(null)
 
-  /* ───── 摄像头（右侧面板预览用） ───── */
+  /* ───── 画布展开状态 ───── */
+  const [expanded, setExpanded] = useState(false)
+
+  /* ───── 摄像头（统一获取，共享给面板预览 + GestureStage 手部检测） ───── */
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [cameraReady, setCameraReady] = useState(false)
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
 
   /* ───── Punch 游戏状态 ───── */
   const punchHandleRef = useRef<ParticlePunchHandle>(null)
@@ -236,7 +158,7 @@ export default function App() {
     return () => { cancelled = true }
   }, [])
 
-  /* ───── 右侧面板摄像头初始化 ───── */
+  /* ───── 统一摄像头初始化（面板预览 + GestureStage 共享同一 stream） ───── */
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
@@ -244,14 +166,17 @@ export default function App() {
     void (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: { ideal: 'user' } },
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: { ideal: 'user' } },
           audio: false,
         })
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return }
         streamRef.current = stream
         video.srcObject = stream
         await video.play()
-        if (!cancelled) setCameraReady(true)
+        if (!cancelled) {
+          setCameraReady(true)
+          setCameraStream(stream)
+        }
       } catch {
         /* 摄像头不可用时静默失败 */
       }
@@ -263,6 +188,7 @@ export default function App() {
       video.pause()
       video.srcObject = null
       setCameraReady(false)
+      setCameraStream(null)
     }
   }, [])
 
@@ -323,6 +249,8 @@ export default function App() {
     const t = window.setTimeout(() => setPunchConfettiActive(false), 5200)
     return () => window.clearTimeout(t)
   }, [punchConfettiActive, punchConfettiKey])
+
+  // Punch 回合倒计时
   useEffect(() => {
     if (punchPhase !== 'running') return
     const t0 = Date.now()
@@ -362,13 +290,9 @@ export default function App() {
 
   const onAudioPlaybackStarted = useCallback(() => {
     setAudioStarted(true)
-    if (phase === 'idle') {
-      setPhase('active')
-      setElapsed(0)
-      setIsPaused(false)
-    }
-    if (punchPhase !== 'running') startPunchRound()
-  }, [phase, punchPhase, startPunchRound])
+    /* 音频自动播放成功只记录状态，不启动计时和 Punch 回合；
+       等用户输入文字点 PUNCH 后再由 handleEmotionSubmit 触发 */
+  }, [])
 
   /* ───── 手动停止 ───── */
   const handleStop = useCallback(() => {
@@ -378,19 +302,24 @@ export default function App() {
     }
   }, [phase])
 
-  /* ───── 情绪提交 → 发送文字到物理引擎 ───── */
+  /* ───── 情绪提交 → 展开画布 + 发送文字到物理引擎 ───── */
   const handleEmotionSubmit = useCallback(
     (text: string) => {
       setEmotion(text)
       submitPhysicsText(text)
+      /* 展开画布 */
+      if (!expanded) setExpanded(true)
       if (phase === 'idle') {
         setPhase('active')
         setElapsed(0)
         setIsPaused(false)
       }
     },
-    [phase, submitPhysicsText],
+    [phase, submitPhysicsText, expanded],
   )
+
+  /* ───── 手动切换展开/折叠 ───── */
+  const handleToggleExpand = useCallback(() => setExpanded((e) => !e), [])
 
   /* ───── 暂停/继续 ───── */
   const handleTogglePause = useCallback(() => setIsPaused((p) => !p), [])
@@ -411,13 +340,15 @@ export default function App() {
     setPunchComboMax(0)
     setPunchConfettiActive(false)
     punchHandleRef.current?.resetPunchRound()
+    setExpanded(false)
   }, [])
 
   const inputDisabled = phase !== 'idle' && phase !== 'over'
 
   return (
-    <div className="app">
-      <DarkBgCanvas />
+    <div className={`app ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
+      {/* 装饰性排版头部 */}
+      <TypoHeader />
 
       {errors.length > 0 && (
         <div className="app-errors">
@@ -444,55 +375,76 @@ export default function App() {
 
       {/* 主内容区 */}
       <div className="app-main">
-        {/* 左侧 2/3 互动区 */}
-        {easterEggVisible ? (
-          <SmashEasterEgg />
-        ) : (
-          <GestureStage
-            textPhysicsJob={textPhysicsJob}
-            onTextPhysicsComplete={onTextPhysicsComplete}
-            onEmotionScanComplete={onEmotionScanComplete}
-            onAudioPlaybackStarted={onAudioPlaybackStarted}
-            musicPunchGameActive={punchPhase === 'running'}
-            musicPunchHandleRef={punchHandleRef}
-            onMusicPunchSuccessfulHit={onPunchHit}
-            onBossDefeated={onBossDefeated}
-            musicPunchHud={
-              punchPhase === 'running'
-                ? { timeLeft: punchTimeLeft, score: punchScore, combo: punchCombo }
-                : null
-            }
-            musicPunchHitTick={punchHitTick}
+        {/* 左侧：互动画布 / 彩蛋模式 + 输入栏（展开态可见） */}
+        <div className="app-left">
+          {easterEggVisible ? (
+            <SmashEasterEgg cameraStream={cameraStream} />
+          ) : (
+            <GestureStage
+              textPhysicsJob={textPhysicsJob}
+              onTextPhysicsComplete={onTextPhysicsComplete}
+              onEmotionScanComplete={onEmotionScanComplete}
+              onAudioPlaybackStarted={onAudioPlaybackStarted}
+              musicPunchGameActive={punchPhase === 'running'}
+              musicPunchHandleRef={punchHandleRef}
+              onMusicPunchSuccessfulHit={onPunchHit}
+              onBossDefeated={onBossDefeated}
+              musicPunchHud={
+                punchPhase === 'running'
+                  ? { timeLeft: punchTimeLeft, score: punchScore, combo: punchCombo }
+                  : null
+              }
+              musicPunchHitTick={punchHitTick}
+              cameraStream={cameraStream}
+            />
+          )}
+          <EmotionInput
+            disabled={inputDisabled}
+            phase={phase}
+            onSubmit={handleEmotionSubmit}
+            onReset={handleReset}
+            onToggleExpand={handleToggleExpand}
+            isExpanded={expanded}
+            onEasterEgg={() => setEasterEggVisible((v) => !v)}
+            easterEggActive={easterEggVisible}
           />
-        )}
+        </div>
 
-        {/* 右侧 1/3 控制面板 */}
-        <ControlPanel
-          phase={phase}
-          emotion={emotion}
-          elapsed={elapsed}
-          isPaused={isPaused}
-          onTogglePause={handleTogglePause}
-          onStop={handleStop}
-          onReset={handleReset}
-          apiState={apiState}
-          gestureBanner={gestureBanner}
-          clipLabel={clipLabel}
-          audioStarted={audioStarted}
-          videoRef={videoRef}
-          cameraReady={cameraReady}
-        />
+        {/* 中/右侧：控制面板 + 折叠态输入栏 */}
+        <div className="app-center-col">
+          <ControlPanel
+            phase={phase}
+            emotion={emotion}
+            elapsed={elapsed}
+            isPaused={isPaused}
+            onTogglePause={handleTogglePause}
+            onStop={handleStop}
+            onReset={handleReset}
+            apiState={apiState}
+            gestureBanner={gestureBanner}
+            clipLabel={clipLabel}
+            audioStarted={audioStarted}
+            videoRef={videoRef}
+            cameraReady={cameraReady}
+          />
+          {/* 折叠态时在面板下方显示输入栏 */}
+          {!expanded && (
+            <div className="app-collapsed-input">
+              <EmotionInput
+                disabled={false}
+                phase={phase}
+                onSubmit={handleEmotionSubmit}
+                onReset={handleReset}
+                onToggleExpand={handleToggleExpand}
+                isExpanded={expanded}
+                onEasterEgg={() => setEasterEggVisible((v) => !v)}
+                easterEggActive={easterEggVisible}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 底部输入栏 */}
-      <EmotionInput
-        disabled={inputDisabled}
-        phase={phase}
-        onSubmit={handleEmotionSubmit}
-        onReset={handleReset}
-        onEasterEgg={() => setEasterEggVisible((v) => !v)}
-        easterEggActive={easterEggVisible}
-      />
     </div>
   )
 }

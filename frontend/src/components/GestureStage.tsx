@@ -31,12 +31,17 @@ import {
   ParticlePunchOverlay,
   type ParticlePunchHandle,
 } from './ParticlePunchOverlay'
-import {
-  BeatGestureHint,
-  type BeatGestureHintHandle,
-} from './BeatGestureHint'
+import type { BeatGestureHintHandle } from './BeatGestureHint'
 import sampleBeatsGuide from '../data/sample-beats.json'
-import { isWithinBeatWindow } from '../lib/beatSync'
+import {
+  isWithinBeatWindow,
+  beatLocalTau,
+  beatTimesForBufferDuration,
+  countBeatCrossings,
+  type SampleBeatMeta,
+} from '../lib/beatSync'
+
+const BEATS_META = sampleBeatsGuide as SampleBeatMeta
 
 const W = 640
 const H = 480
@@ -142,12 +147,14 @@ const HAND_CONNECTIONS: [number, number][] = [
 const PAL = {
   /** 白色画板底 */
   bg: [255, 255, 255] as const,
-  /** 主细线 / 文字（深灰） */
-  ink: [30, 30, 34] as const,
-  /** 次级注释 */
-  inkFaint: [120, 120, 125] as const,
-  /** 飘字碎片（浅灰） */
-  ghost: [160, 160, 165] as const,
+  /** 手势骨架/关键点（纯黑） */
+  ink: [0, 0, 0] as const,
+  /** 装饰线条 / HUD 文字（统一蓝色） */
+  deco: [0, 189, 214] as const,
+  /** 装饰次级（蓝色降透明度用） */
+  decoFaint: [0, 150, 175] as const,
+  /** 飘字碎片（淡蓝） */
+  ghost: [0, 170, 200] as const,
 }
 
 /** 五指指尖拖尾 — 淡蓝 */
@@ -210,7 +217,7 @@ function drawGlitchField(
 
 function drawSystemHeader(ctx: CanvasRenderingContext2D): void {
   ctx.font = '11px "IBM Plex Mono", monospace'
-  ctx.fillStyle = `rgb(${PAL.inkFaint[0]}, ${PAL.inkFaint[1]}, ${PAL.inkFaint[2]})`
+  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.45)`
   let y = 22
   ctx.fillText('// SYSTEM: MATRIX_VOID · REACT_VITE', 14, y)
   ctx.fillText('// RIPPLE: SAMPLE_RATE_BINDING · TONE_PLAYER', 14, y + 14)
@@ -227,7 +234,7 @@ function drawIdleGeometry(
   const cy = h / 2
   const baseR = (88 * Math.min(w, h)) / 480
   const r = baseR + Math.sin(frame * 0.02) * 4
-  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.42)`
+  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.42)`
   ctx.lineWidth = 0.6
   ctx.setLineDash([3, 7])
   ctx.beginPath()
@@ -249,16 +256,16 @@ function drawStartPrompt(
 ): void {
   const cx = w / 2
   const cy = h / 2
-  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.9)`
+  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.7)`
   ctx.lineWidth = 0.75
   ctx.strokeRect(cx - 248, cy - 42, 496, 84)
-  ctx.fillStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
+  ctx.fillStyle = `rgb(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]})`
   ctx.font = '13px "IBM Plex Mono", monospace'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText('[ BG_LOOP · AUTO_START · TAP_PREVIEW_IF_SILENT ]', cx, cy - 14)
   ctx.font = '12px "IBM Plex Mono", monospace'
-  ctx.fillStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.82)`
+  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.72)`
   ctx.fillText(
     '背景循环自动尝试播放 · 静音用 // STOP_AUDIO · 停止后可点预览区恢复',
     cx,
@@ -272,7 +279,7 @@ function drawStartPrompt(
 function drawCameraWaiting(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.font = '12px "IBM Plex Mono", monospace'
   ctx.textAlign = 'center'
-  ctx.fillStyle = `rgb(${PAL.inkFaint[0]}, ${PAL.inkFaint[1]}, ${PAL.inkFaint[2]})`
+  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.55)`
   ctx.fillText('// CAMERA · 等待摄像头画面 / 请确认浏览器已授权', w / 2, h / 2 - 8)
   ctx.font = '10px "IBM Plex Mono", monospace'
   ctx.fillText(
@@ -289,8 +296,8 @@ function drawHandConnections(
   w: number,
   h: number,
 ): void {
-  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.38)`
-  ctx.lineWidth = 0.5
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.85)`
+  ctx.lineWidth = 1.2
   for (const [a, b] of HAND_CONNECTIONS) {
     const pa = landmarks[a]
     const pb = landmarks[b]
@@ -367,8 +374,8 @@ function drawHandThin(
   w: number,
   h: number,
 ): void {
-  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.55)`
-  ctx.lineWidth = 0.55
+  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.9)`
+  ctx.lineWidth = 1.0
   for (const p of landmarks) {
     const x = p.x * w
     const y = p.y * h
@@ -445,7 +452,7 @@ function drawTraceHUD(
   w: number,
   h: number,
 ): void {
-  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.4)`
+  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.4)`
   ctx.lineWidth = 0.5
   ctx.beginPath()
   ctx.moveTo(w / 2, h / 2)
@@ -453,7 +460,7 @@ function drawTraceHUD(
   ctx.stroke()
 
   ctx.font = '10px "IBM Plex Mono", monospace'
-  ctx.fillStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
+  ctx.fillStyle = `rgb(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]})`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
   ctx.fillText(
@@ -468,11 +475,11 @@ function drawTraceHUD(
     h - 38,
   )
 
-  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.55)`
+  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.45)`
   ctx.lineWidth = 0.55
   ctx.strokeRect(10, 52, 280, 74)
 
-  ctx.fillStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
+  ctx.fillStyle = `rgb(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]})`
   ctx.fillText('// TRACE · GESTURE_SAMPLE_CONTROLLER', 18, 70)
   ctx.fillText(`RADIUS        ${nf(radiusPx, 1, 1)} px`, 18, 88)
   ctx.fillText(
@@ -496,18 +503,75 @@ function drawGestureCue(
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   const y = 96
-  ctx.fillStyle = `rgba(30, 30, 34, ${0.15 + 0.55 * fade})`
+  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, ${0.3 + 0.55 * fade})`
   ctx.fillText(`// GESTURE · ${hit.labelZh}  /  ${hit.labelEn}`, w / 2, y)
   ctx.lineWidth = 0.6
-  ctx.strokeStyle = `rgba(30, 30, 34, ${0.25 + 0.45 * fade})`
+  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, ${0.3 + 0.45 * fade})`
   ctx.strokeRect(w / 2 - 158, y - 6, 316, 26)
   ctx.restore()
 }
 
 function drawSignalNull(ctx: CanvasRenderingContext2D, h: number): void {
   ctx.font = '10px "IBM Plex Mono", monospace'
-  ctx.fillStyle = `rgb(${PAL.inkFaint[0]}, ${PAL.inkFaint[1]}, ${PAL.inkFaint[2]})`
+  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.5)`
   ctx.fillText('// SIGNAL: NULL · NO_HAND', 14, h - 18)
+}
+
+/**
+ * 节拍同步的动作提示 — 在画布底部中央脉冲显示 PUNCH / CHOP。
+ * tau: 0→1 当前拍内进度（0=拍点，1=下一拍点）
+ * beatCount: 累计经过的拍数（用于交替 PUNCH / CHOP）
+ * 每 2 拍提示一次，让用户有更充裕的反应时间。
+ */
+function drawBeatActionHint(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  tau: number,
+  beatCount: number,
+): void {
+  // 每 2 拍出一次提示，交替 PUNCH / CHOP
+  const slowBeat = Math.floor(beatCount / 2)
+  const isPunch = slowBeat % 2 === 0
+  const label = isPunch ? 'PUNCH !' : 'CHOP !'
+  const zhLabel = isPunch ? '出拳' : '快划'
+
+  // tau 在 [0, 0.6) 期间显示（前 60% 的拍内时间）
+  // 只在偶数拍显示（即每2拍一次）
+  const isEvenBeat = beatCount % 2 === 0
+  if (!isEvenBeat) return
+  if (tau > 0.65) return
+
+  // 脉冲效果：拍点处最大，然后衰减
+  const pulse = Math.max(0, 1 - tau / 0.65)
+  const scale = 1 + pulse * 0.15
+  const alpha = 0.2 + pulse * 0.55
+
+  const cx = w / 2
+  const cy = h - 80
+
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.scale(scale, scale)
+
+  // 主文字
+  ctx.font = 'bold 28px "IBM Plex Mono", "Arial Black", monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, ${alpha})`
+  ctx.fillText(label, 0, 0)
+
+  // 中文副标
+  ctx.font = '11px "IBM Plex Mono", monospace'
+  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, ${alpha * 0.65})`
+  ctx.fillText(zhLabel, 0, 22)
+
+  // 节拍条 — 拍点处亮，逐渐收窄
+  const barW = 120 * pulse
+  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, ${alpha * 0.4})`
+  ctx.fillRect(-barW / 2, 34, barW, 2)
+
+  ctx.restore()
 }
 
 export type TextPhysicsJob = { id: number; text: string }
@@ -527,6 +591,8 @@ type GestureStageProps = {
   musicPunchHud?: { timeLeft: number; score: number; combo: number } | null
   /** 击打成功计数，用于分数与节拍数字弹跳 */
   musicPunchHitTick?: number
+  /** 外部共享的摄像头流 — 避免重复 getUserMedia */
+  cameraStream?: MediaStream | null
 }
 
 export function GestureStage({
@@ -540,6 +606,7 @@ export function GestureStage({
   onBossDefeated,
   musicPunchHud = null,
   musicPunchHitTick = 0,
+  cameraStream = null,
 }: GestureStageProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const punchViewportFxTimerRef = useRef<ReturnType<
@@ -552,7 +619,6 @@ export function GestureStage({
   const videoRef = useRef<HTMLVideoElement>(null)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const beatGestureHintRef = useRef<BeatGestureHintHandle | null>(null)
-  const punchHudRef = useRef<HTMLDivElement>(null)
   const canvasHostRef = useRef<HTMLDivElement>(null)
   /** 主画布逻辑像素（与 gesture-canvas-host 的 CSS 尺寸一致），避免固定 640×480 被拉宽变糊 */
   const canvasLayoutRef = useRef({ w: W, h: H })
@@ -570,9 +636,10 @@ export function GestureStage({
   } | null>(null)
   const sequencePhaseRef = useRef<'idle' | 'scan' | 'matter'>('idle')
   const matterProbeRef = useRef<HandProbePoint>(null)
-  const punchHudComboRef = useRef<HTMLDivElement>(null)
-  const punchComboHudPrevRef = useRef(0)
   const punchComboMirrorRef = useRef(0)
+  /** 节拍计数器（用于 beat action hint） */
+  const beatHintCountRef = useRef(0)
+  const beatHintPrevPosRef = useRef<number | null>(null)
 
   const [audioStarted, setAudioStarted] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
@@ -607,59 +674,18 @@ export function GestureStage({
   const userStoppedBgRef = useRef(false)
 
   useEffect(() => {
-    const c = musicPunchHud?.combo
-    if (c === undefined) {
-      punchComboHudPrevRef.current = 0
-      return
-    }
-    const prev = punchComboHudPrevRef.current
-    let clearTimer: ReturnType<typeof window.setTimeout> | undefined
-    const el = punchHudComboRef.current
-    if (c > prev && c > 0 && el) {
-      el.classList.remove('is-combo-pop', 'is-combo-break')
-      requestAnimationFrame(() => {
-        el.classList.add('is-combo-pop')
-      })
-      clearTimer = window.setTimeout(() => {
-        el.classList.remove('is-combo-pop')
-      }, 420)
-    } else if (c === 0 && prev > 0 && el) {
-      el.classList.remove('is-combo-pop')
-      el.classList.add('is-combo-break')
-      clearTimer = window.setTimeout(() => {
-        el.classList.remove('is-combo-break')
-      }, 300)
-    }
-    punchComboHudPrevRef.current = c
-    return () => {
-      if (clearTimer != null) window.clearTimeout(clearTimer)
-    }
-  }, [musicPunchHud?.combo])
-
-  useEffect(() => {
     if (!musicPunchHitTick) return
-    const hud = punchHudRef.current
     const host = canvasHostRef.current
-    if (hud) {
-      hud.classList.remove('is-beat-hit-pop')
-      requestAnimationFrame(() => {
-        hud.classList.add('is-beat-hit-pop')
-      })
-    }
     if (host) {
       host.classList.remove('is-particle-hit-rumble')
       requestAnimationFrame(() => {
         host.classList.add('is-particle-hit-rumble')
       })
     }
-    const tHud = window.setTimeout(() => {
-      hud?.classList.remove('is-beat-hit-pop')
-    }, 560)
     const tRumble = window.setTimeout(() => {
       host?.classList.remove('is-particle-hit-rumble')
     }, 400)
     return () => {
-      window.clearTimeout(tHud)
       window.clearTimeout(tRumble)
     }
   }, [musicPunchHitTick])
@@ -750,41 +776,55 @@ export function GestureStage({
     }
   }, [])
 
-  /* ── 隐藏摄像头 — 仅用于手部检测，不在画布上绘制视频画面 ── */
+  /* ── 隐藏摄像头 — 使用外部共享的 stream，仅用于手部检测 ── */
   useEffect(() => {
     const video = videoRef.current
-    if (!video) return
-    let stream: MediaStream | null = null
+    if (!video || !cameraStream) return
     let cancelled = false
-    void (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: W },
-            height: { ideal: H },
-            facingMode: { ideal: 'user' },
-          },
-          audio: false,
-        })
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop())
-          return
-        }
-        video.srcObject = stream
-        await video.play()
-        await resumeAudioContext()
-        if (!cancelled && !userStoppedBgRef.current) void tryStartAudio()
-      } catch {
-        /* 摄像头不可用时静默失败 — 仅影响手部检测 */
+    video.srcObject = cameraStream
+    video.play().then(() => {
+      if (!cancelled) {
+        void resumeAudioContext()
+        if (!userStoppedBgRef.current) void tryStartAudio()
       }
-    })()
+    }).catch(() => {
+      /* 摄像头不可用时静默失败 — 仅影响手部检测 */
+    })
     return () => {
       cancelled = true
-      stream?.getTracks().forEach((t) => t.stop())
       video.pause()
       video.srcObject = null
     }
-  }, [tryStartAudio])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraStream])
+
+  useEffect(() => {
+    const host = canvasHostRef.current
+    if (!host) return
+
+    const applyLayout = (width: number, height: number) => {
+      const w = Math.max(2, Math.round(width))
+      const h = Math.max(2, Math.round(height))
+      canvasLayoutRef.current = { w, h }
+      const mc = matterCanvasRef.current
+      if (mc && sequencePhaseRef.current !== 'matter') {
+        if (mc.width !== w || mc.height !== h) {
+          mc.width = w
+          mc.height = h
+        }
+      }
+    }
+
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect
+      if (!cr || cr.width < 1 || cr.height < 1) return
+      applyLayout(cr.width, cr.height)
+    })
+    ro.observe(host)
+    applyLayout(host.clientWidth, host.clientHeight)
+
+    return () => ro.disconnect()
+  }, [])
 
   useEffect(() => {
     const host = canvasHostRef.current
@@ -939,11 +979,6 @@ export function GestureStage({
         for (const lm of hands) {
           drawHandConnections(ctx, lm, w, h)
           drawHandThin(ctx, lm, w, h)
-          const thumb = lm[THUMB_TIP]
-          const indexFinger = lm[INDEX_TIP]
-          if (thumb && indexFinger) {
-            drawPinchConstruct(ctx, thumb, indexFinger, w, h)
-          }
         }
 
         const primary = pickPrimaryHand(hands)
@@ -1046,48 +1081,7 @@ export function GestureStage({
         drawSignalNull(ctx, h)
       }
 
-      const tipGlowNow = performance.now()
-      const tipBuckets = fingertipGlowTrailsRef.current
-      const maxAge = TIP_GLOW_TRAIL_MAX_AGE_MS
-      for (let hi = 0; hi < MAX_HANDS_FOR_TIP_GLOW; hi++) {
-        for (const trail of tipBuckets[hi]!) {
-          while (
-            trail.length > 0 &&
-            tipGlowNow - trail[0]!.t > maxAge
-          ) {
-            trail.shift()
-          }
-        }
-      }
-      const nHands = Math.min(hands.length, MAX_HANDS_FOR_TIP_GLOW)
-      for (let hi = nHands; hi < MAX_HANDS_FOR_TIP_GLOW; hi++) {
-        for (const trail of tipBuckets[hi]!) trail.length = 0
-      }
-      for (let hi = 0; hi < nHands; hi++) {
-        const lm = hands[hi]!
-        const tipsForHand = tipBuckets[hi]!
-        for (let ti = 0; ti < FINGER_TIP_INDICES.length; ti++) {
-          const idx = FINGER_TIP_INDICES[ti]!
-          const tip = lm[idx]
-          if (!tip) continue
-          const px = tip.x * w
-          const py = tip.y * h
-          const trail = tipsForHand[ti]!
-          const last = trail[trail.length - 1]
-          const d2 = last
-            ? (px - last.x) ** 2 + (py - last.y) ** 2
-            : 1e6
-          if (!last || d2 > 9 || tipGlowNow - last.t > 38) {
-            trail.push({ x: px, y: py, t: tipGlowNow })
-            while (trail.length > TIP_GLOW_TRAIL_MAX_POINTS) trail.shift()
-          }
-        }
-      }
-      for (let hi = 0; hi < MAX_HANDS_FOR_TIP_GLOW; hi++) {
-        for (const trail of tipBuckets[hi]!) {
-          drawFingerTipGlowTrail(ctx, trail, tipGlowNow)
-        }
-      }
+      /* 指尖拖尾绘制已关闭 */
 
       const cue = lastGestureCueRef.current
       if (cue) {
@@ -1108,14 +1102,28 @@ export function GestureStage({
       }
       if (ac && audioOn && ac.isLoopPlaying()) {
         ac.advanceLoopPlaybackClock()
+        const pos = ac.getLoopPlaybackPositionSec()
         let dur = ac.getBufferDurationSec()
         if (dur <= 0.05) dur = BEAT_GUIDE_FALLBACK_DURATION_SEC
         beatGestureHintRef.current?.sync(
-          ac.getLoopPlaybackPositionSec(),
+          pos,
           dur,
           true,
           ac.getPlaybackSyncGeneration(),
         )
+        // ── beat action hint（canvas 上直接绘制 PUNCH/CHOP 提示）──
+        const beats = beatTimesForBufferDuration(BEATS_META, dur)
+        const tau = beatLocalTau(pos, dur, beats)
+        if (beatHintPrevPosRef.current !== null) {
+          beatHintCountRef.current += countBeatCrossings(
+            beatHintPrevPosRef.current,
+            pos,
+            dur,
+            beats,
+          )
+        }
+        beatHintPrevPosRef.current = pos
+        drawBeatActionHint(ctx, w, h, tau, beatHintCountRef.current)
       } else if (punchGameOn) {
         const dur = BEAT_GUIDE_FALLBACK_DURATION_SEC
         const t =
@@ -1126,8 +1134,23 @@ export function GestureStage({
           true,
           BEAT_HINT_SYNC_WALLCLOCK,
         )
+        // ── punch game 模式也用 wall clock 驱动 beat hint ──
+        const beats = beatTimesForBufferDuration(BEATS_META, dur)
+        const tau = beatLocalTau(t, dur, beats)
+        if (beatHintPrevPosRef.current !== null) {
+          beatHintCountRef.current += countBeatCrossings(
+            beatHintPrevPosRef.current,
+            t,
+            dur,
+            beats,
+          )
+        }
+        beatHintPrevPosRef.current = t
+        drawBeatActionHint(ctx, w, h, tau, beatHintCountRef.current)
       } else {
         beatGestureHintRef.current?.sync(0, 0, false, 0)
+        beatHintCountRef.current = 0
+        beatHintPrevPosRef.current = null
       }
     },
     [],
@@ -1239,46 +1262,11 @@ export function GestureStage({
         role="presentation"
       >
         <canvas ref={canvasRef} className="gesture-canvas" />
-        <BeatGestureHint
-          ref={beatGestureHintRef}
-          hitTick={musicPunchHitTick}
-        />
         <canvas
           ref={matterCanvasRef}
           className={`gesture-matter-canvas${sequencePhase === 'matter' ? ' is-live' : ''}${SHOW_TEXT_SEQUENCE_VISUALS ? '' : ' is-visual-suppressed'}`}
           aria-hidden
         />
-        {musicPunchHud ? (
-          <div
-            ref={punchHudRef}
-            className="music-punch-hud"
-            aria-live="polite"
-          >
-            <span className="music-punch-hud-time">
-              // {musicPunchHud.timeLeft}s
-            </span>
-            <div
-              ref={punchHudComboRef}
-              className={`music-punch-hud-combo${
-                musicPunchHud.combo >= 20
-                  ? ' is-combo-tier-s'
-                  : musicPunchHud.combo >= 12
-                    ? ' is-combo-tier-a'
-                    : musicPunchHud.combo >= 6
-                      ? ' is-combo-tier-b'
-                      : ''
-              }${musicPunchHud.combo <= 0 ? ' is-combo-idle' : ''}`}
-            >
-              <span className="music-punch-hud-combo-label">COMBO</span>
-              <span className="music-punch-hud-combo-value">
-                ×{musicPunchHud.combo}
-              </span>
-            </div>
-            <span className="music-punch-hud-score">
-              SCORE · {musicPunchHud.score}
-            </span>
-          </div>
-        ) : null}
         {musicPunchHandleRef ? (
           <ParticlePunchOverlay
             ref={musicPunchHandleRef}
@@ -1300,7 +1288,17 @@ export function GestureStage({
         muted
         playsInline
         autoPlay
-        style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          opacity: 0,
+          pointerEvents: 'none',
+          top: 0,
+          left: 0,
+          overflow: 'hidden',
+          clip: 'rect(0,0,0,0)',
+        }}
       />
     </div>
   )

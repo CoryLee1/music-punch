@@ -6,14 +6,22 @@
 
 :root {
   font-family: 'Space Mono', 'IBM Plex Mono', ui-monospace, monospace;
-  --bg-primary: #f0f0f0;
-  --bg-secondary: #e8e8e8;
-  --bg-tertiary: #dbdbdb;
-  --border-color: rgba(0, 0, 0, 0.08);
-  --border-light: rgba(0, 0, 0, 0.12);
-  --text-primary: rgba(0, 0, 0, 0.85);
-  --text-secondary: rgba(0, 0, 0, 0.45);
+
+  /* ── 银灰色设计体系 · Editorial ── */
+  --bg-body: #d0d0ce;
+  --bg-primary: #f0f0ee;
+  --bg-secondary: #f2f2f0;
+  --bg-tertiary: #f6f6f4;
+  --bg-raised: #ffffff;
+
+  --border-color: rgba(0, 0, 0, 0.12);
+  --border-light: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.20);
+
+  --text-primary: rgba(0, 0, 0, 0.88);
+  --text-secondary: rgba(0, 0, 0, 0.48);
   --text-muted: rgba(0, 0, 0, 0.25);
+
   --accent: #00a0b8;
   --brand: #00a0b8;
   --brand-rgb: 0, 160, 184;
@@ -24,30 +32,25 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: #1a1a1a;
+  background: linear-gradient(to right, #c8c8c6, #adadab);
   color: var(--text-primary);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 #root {
-  width: 88%;
-  height: 86%;
-  border-radius: 18px;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.5),
-    0 12px 40px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  border: 1.5px solid rgba(255, 255, 255, 0.08);
   position: relative;
   z-index: 1;
 }
 
 ::selection {
-  background: rgba(0, 160, 184, 0.2);
+  background: rgba(0, 160, 184, 0.15);
   color: #000;
 }
 
@@ -55,7 +58,6 @@ input, button, textarea {
   font-family: inherit;
 }
 
-/* scrollbar */
 ::-webkit-scrollbar {
   width: 4px;
 }
@@ -63,6 +65,5 @@ input, button, textarea {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.10);
 }

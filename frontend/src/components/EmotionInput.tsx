@@ -7,11 +7,25 @@ interface EmotionInputProps {
   phase?: AppPhase
   onSubmit: (emotion: string) => void
   onReset?: () => void
+  /** 侧展开按钮：点击后展开左侧画布 */
+  onToggleExpand?: () => void
+  /** 当前是否已展开（控制箭头朝向） */
+  isExpanded?: boolean
+  /** 彩蛋按钮 */
   onEasterEgg?: () => void
   easterEggActive?: boolean
 }
 
-export function EmotionInput({ disabled, phase, onSubmit, onReset, onEasterEgg, easterEggActive }: EmotionInputProps) {
+export function EmotionInput({
+  disabled,
+  phase,
+  onSubmit,
+  onReset,
+  onToggleExpand,
+  isExpanded,
+  onEasterEgg,
+  easterEggActive,
+}: EmotionInputProps) {
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -56,6 +70,20 @@ export function EmotionInput({ disabled, phase, onSubmit, onReset, onEasterEgg, 
 
   return (
     <div className="app-input-bar">
+      {/* 侧展开按钮 */}
+      {onToggleExpand && (
+        <button
+          className="input-expand-toggle"
+          onClick={onToggleExpand}
+          type="button"
+          title={isExpanded ? '收起画布' : '展开画布'}
+          aria-label={isExpanded ? '收起画布' : '展开画布'}
+        >
+          <span className={`expand-arrow ${isExpanded ? 'is-expanded' : ''}`}>
+            {isExpanded ? '▶' : '◀'}
+          </span>
+        </button>
+      )}
       {/* 彩蛋按钮 */}
       {onEasterEgg && (
         <button
@@ -68,19 +96,30 @@ export function EmotionInput({ disabled, phase, onSubmit, onReset, onEasterEgg, 
         </button>
       )}
       <span className="input-prefix">{'//>'}</span>
-      <input
-        ref={inputRef}
-        className="emotion-input"
-        type="text"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="输入你的情绪... type your emotion here"
-        disabled={disabled}
-        maxLength={200}
-        autoComplete="off"
-        spellCheck={false}
-      />
+      {/* 输入框 + PUNCH 按钮容器 */}
+      <div className="input-field-group">
+        <input
+          ref={inputRef}
+          className="emotion-input"
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="输入你的烦恼，准备出击..."
+          disabled={disabled}
+          maxLength={200}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <button
+          className="input-submit"
+          onClick={handleSubmit}
+          disabled={disabled}
+          type="button"
+        >
+          PUNCH
+        </button>
+      </div>
       {(phase === 'over' || phase === 'ending') && onReset && (
         <button
           className="input-restart"
@@ -90,14 +129,6 @@ export function EmotionInput({ disabled, phase, onSubmit, onReset, onEasterEgg, 
           ↻ Restart
         </button>
       )}
-      <button
-        className="input-submit"
-        onClick={handleSubmit}
-        disabled={disabled}
-        type="button"
-      >
-        PUNCH
-      </button>
     </div>
   )
 }
