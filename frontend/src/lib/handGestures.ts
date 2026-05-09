@@ -39,6 +39,20 @@ function dist(a: HandLM, b: HandLM): number {
   return Math.sqrt(dist2(a, b))
 }
 
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)))
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * 拇指尖–食指尖在归一化图像 XY 上的距离 → 0~1：捏紧偏小、张开偏大。
+ * 供音频等连续参数（如混响干湿）使用。
+ */
+export function thumbIndexSpread01(lm: HandLM[]): number {
+  const d = dist(lm[THUMB_TIP], lm[INDEX_TIP])
+  return smoothstep(0.028, 0.2, d)
+}
+
 /** 食指到小指掌根跨度，近似“手在画面里大小”（近大远小） */
 export function palmSpanXY(lm: HandLM[]): number {
   return dist(lm[INDEX_MCP], lm[PINKY_MCP])

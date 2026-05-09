@@ -22,6 +22,10 @@ import {
   startTextMatterWorld,
   type HandProbePoint,
 } from '../lib/runTextMatter'
+import {
+  getDashscopeAsrWsUrl,
+  startDashscopeRealtimeAsr,
+} from '../lib/dashscopeRealtimeAsr'
 import { TechnoScanOverlay } from './TechnoScanOverlay'
 import {
   ParticlePunchOverlay,
@@ -36,6 +40,7 @@ import { isWithinBeatWindow } from '../lib/beatSync'
 
 const W = 640
 const H = 480
+/** 摄像头/检测用理想分辨率（与画布逻辑尺寸无关） */
 const INDEX = 8
 const THUMB_TIP = 4
 const INDEX_TIP = 8
@@ -144,6 +149,9 @@ const PAL = {
   /** 飘字碎片（浅灰） */
   ghost: [160, 160, 165] as const,
 }
+
+/** 五指指尖拖尾 — 淡蓝 */
+const TIP_TRAIL: readonly [number, number, number] = [165, 215, 248]
 
 function nf(n: number, _w: number, dec: number) {
   if (dec <= 0) return String(Math.round(n))
@@ -294,7 +302,7 @@ function drawHandConnections(
   }
 }
 
-/** 五指指尖运动拖尾（深色，配合白色画板） */
+/** 五指指尖运动拖尾（淡蓝，配合白色画板） */
 function drawFingerTipGlowTrail(
   ctx: CanvasRenderingContext2D,
   trail: TipGlowPoint[],
@@ -320,11 +328,12 @@ function drawFingerTipGlowTrail(
         const sa = segAlpha(p0.t, p1.t)
         if (sa < 0.02) continue
         const rootWide = 1 - sa
+        const [tr, tg, tb] = TIP_TRAIL
         if (pass === 0) {
-          ctx.strokeStyle = `rgba(30, 30, 34, ${sa * 0.15})`
+          ctx.strokeStyle = `rgba(${tr}, ${tg}, ${tb}, ${sa * 0.15})`
           ctx.lineWidth = 7 + sa * 6 + rootWide * 11
         } else {
-          ctx.strokeStyle = `rgba(30, 30, 34, ${sa * 0.7})`
+          ctx.strokeStyle = `rgba(${tr}, ${tg}, ${tb}, ${sa * 0.7})`
           ctx.lineWidth = 1 + sa * 1.65 + rootWide * 2.4
         }
         ctx.beginPath()
@@ -337,11 +346,12 @@ function drawFingerTipGlowTrail(
 
   const head = trail[trail.length - 1]!
   const headAge = Math.max(0, 1 - (nowMs - head.t) / maxAge)
+  const [tr, tg, tb] = TIP_TRAIL
   if (headAge > 0.06) {
     const g = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 14)
-    g.addColorStop(0, `rgba(30, 30, 34, ${headAge * 0.35})`)
-    g.addColorStop(0.45, `rgba(30, 30, 34, ${headAge * 0.08})`)
-    g.addColorStop(1, 'rgba(30, 30, 34, 0)')
+    g.addColorStop(0, `rgba(${tr}, ${tg}, ${tb}, ${headAge * 0.35})`)
+    g.addColorStop(0.45, `rgba(${tr}, ${tg}, ${tb}, ${headAge * 0.08})`)
+    g.addColorStop(1, `rgba(${tr}, ${tg}, ${tb}, 0)`)
     ctx.fillStyle = g
     ctx.beginPath()
     ctx.arc(head.x, head.y, 14, 0, Math.PI * 2)
@@ -544,6 +554,8 @@ export function GestureStage({
   const beatGestureHintRef = useRef<BeatGestureHintHandle | null>(null)
   const punchHudRef = useRef<HTMLDivElement>(null)
   const canvasHostRef = useRef<HTMLDivElement>(null)
+  /** 主画布逻辑像素（与 gesture-canvas-host 的 CSS 尺寸一致），避免固定 640×480 被拉宽变糊 */
+  const canvasLayoutRef = useRef({ w: W, h: H })
   const fingertipGlowTrailsRef = useRef<TipGlowPoint[][][]>([
     emptyHandTipGlowTrails(),
     emptyHandTipGlowTrails(),
@@ -775,6 +787,34 @@ export function GestureStage({
   }, [tryStartAudio])
 
   useEffect(() => {
+    const host = canvasHostRef.current
+    if (!host) return
+
+    const applyLayout = (width: number, height: number) => {
+      const w = Math.max(2, Math.round(width))
+      const h = Math.max(2, Math.round(height))
+      canvasLayoutRef.current = { w, h }
+      const mc = matterCanvasRef.current
+      if (mc && sequencePhaseRef.current !== 'matter') {
+        if (mc.width !== w || mc.height !== h) {
+          mc.width = w
+          mc.height = h
+        }
+      }
+    }
+
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect
+      if (!cr || cr.width < 1 || cr.height < 1) return
+      applyLayout(cr.width, cr.height)
+    })
+    ro.observe(host)
+    applyLayout(host.clientWidth, host.clientHeight)
+
+    return () => ro.disconnect()
+  }, [])
+
+  useEffect(() => {
     if (!textPhysicsJob) return
     const { text } = textPhysicsJob
     setSequencePhase('scan')
@@ -785,10 +825,8 @@ export function GestureStage({
     const scanTimerId = window.setTimeout(() => {
       setSequencePhase('matter')
       onEmotionScanComplete?.()
-      const main = canvasRef.current
       const matterEl = matterCanvasRef.current
-      const ww = main?.width || W
-      const hh = main?.height || H
+      const { w: ww, h: hh } = canvasLayoutRef.current
       if (matterEl && ww > 0 && hh > 0) {
         matterEl.width = ww
         matterEl.height = hh
@@ -822,16 +860,54 @@ export function GestureStage({
     }
   }, [textPhysicsJob?.id, onTextPhysicsComplete, onEmotionScanComplete])
 
+  const wantDashscopeAsr =
+    musicPunchGameActive || sequencePhase !== 'idle'
+
+  useEffect(() => {
+    if (!wantDashscopeAsr || !musicPunchHandleRef) return
+
+    let stop: (() => void) | undefined
+    let cancelled = false
+
+    void (async () => {
+      try {
+        stop = await startDashscopeRealtimeAsr({
+          wsUrl: getDashscopeAsrWsUrl(),
+          onResult: ({ text }) => {
+            const t = text.trim()
+            if (t) musicPunchHandleRef.current?.appendUserTextParticles(t)
+          },
+          onError: () => {
+            /* 服务端未配 DASHSCOPE_API_KEY 等 — 静默 */
+          },
+        })
+        if (cancelled) stop()
+      } catch {
+        /* 麦克风权限 / 连接失败 */
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      stop?.()
+    }
+  }, [wantDashscopeAsr, musicPunchHandleRef])
+
   const paint = useCallback(
     (result: HandLandmarkerResult | null, audioOn: boolean) => {
       const c = canvasRef.current
       if (!c) return
       const ctx = c.getContext('2d')
       if (!ctx) return
-      const w = W
-      const h = H
-      c.width = w
-      c.height = h
+      const { w, h } = canvasLayoutRef.current
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const bw = Math.max(1, Math.round(w * dpr))
+      const bh = Math.max(1, Math.round(h * dpr))
+      if (c.width !== bw || c.height !== bh) {
+        c.width = bw
+        c.height = bh
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
       /* 白色画板底 */
       ctx.fillStyle = `rgb(${PAL.bg[0]}, ${PAL.bg[1]}, ${PAL.bg[2]})`
@@ -1169,8 +1245,6 @@ export function GestureStage({
         />
         <canvas
           ref={matterCanvasRef}
-          width={W}
-          height={H}
           className={`gesture-matter-canvas${sequencePhase === 'matter' ? ' is-live' : ''}${SHOW_TEXT_SEQUENCE_VISUALS ? '' : ' is-visual-suppressed'}`}
           aria-hidden
         />

@@ -7,9 +7,9 @@ import {
 import sampleBeatsJson from '../data/sample-beats.json'
 import type { GestureSignal } from './handGestures'
 import {
-  chopPoseScore,
   isFistLike,
   palmSpanXY,
+  thumbIndexSpread01,
   type HandLM,
 } from './handGestures'
 import { PUNCH_SFX_ENABLED } from './punchSfxConfig'
@@ -50,6 +50,11 @@ const PUNCH_SFX_URL = '/bass-808-shot-bomboclat_C_major.wav'
 /** 出拳采样相对主干的响度（0~1） */
 const PUNCH_SFX_GAIN = 0.52
 
+/** 拇–食张开程度对主循环的额外变调幅度（半音，捏紧→偏低、张开→偏高） */
+const HAND_SPREAD_PITCH_SEMITONE_RANGE = 0.38
+/** 每帧向目标变调靠拢的比例（约 60fps 时响应 ~0.1s） */
+const HAND_SPREAD_PITCH_SMOOTH = 0.14
+
 /**
  * 用 Tone.Player + 解码后的 AudioBuffer，避免 URL 加载失败时仅报 “Unable to decode audio data”。
  * 会先 fetch 并检查 HTTP 与 RIFF 头，再 decodeAudioData。
@@ -77,6 +82,8 @@ export class SampleLoopController {
 
   /** 跨过主拍累计的半音；仅在手势「打中」时增加（不再随时间自动涨） */
   private beatPitchSemitones = 0
+  /** 由拇指–食指间距平滑出的额外半音（与 {@link beatPitchSemitones} 相加） */
+  private handSpreadPitchSmoothed = 0
   /** 与当前缓冲时长对齐后的拍点时间（秒） */
   private beatTimesCached: number[] = []
 
@@ -227,7 +234,8 @@ export class SampleLoopController {
       this.lastClockPerfMs = 0
       this.hasStartedPlayback = true
       this.beatPitchSemitones = 0
-      this.applyLoopPitchFromBeats()
+      this.handSpreadPitchSmoothed = 0
+      this.applyCombinedLoopPitch()
       this.gain.gain.rampTo(PLAYBACK_GAIN, 0.06)
       void this.ensurePunchSfx()
 
@@ -293,6 +301,7 @@ export class SampleLoopController {
     this.player = new Tone.Player(audioBuf).connect(this.loopPitchShift)
     this.player.loop = true
     this.beatPitchSemitones = 0
+    this.handSpreadPitchSmoothed = 0
     this.applyLoopPitchFromBeats()
     this.refreshBeatTimesForCurrentBuffer()
 
@@ -329,7 +338,13 @@ export class SampleLoopController {
     if (this.player) {
       this.player.playbackRate = 1
     }
-    this.loopPitchShift.pitch = this.beatPitchSemitones
+    this.applyCombinedLoopPitch()
+  }
+
+  /** 击打累计半音 + 手指间距轻微变调 */
+  private applyCombinedLoopPitch(): void {
+    this.loopPitchShift.pitch =
+      this.beatPitchSemitones + this.handSpreadPitchSmoothed
   }
 
   /** 节拍引导：换轨后 generation 变化时应丢弃累计拍状态 */
@@ -357,19 +372,20 @@ export class SampleLoopController {
 
   /**
    * 根据主手位姿调制空间感：握拳且手在画面中小（远）→ 低通发闷；
-   * 刀手姿态且腕部靠画面上方 → 混响加重，靠下趋近于干声。
+   * 混响干湿与轻微变调由拇指尖与食指尖间距连续控制（捏紧偏干、偏低；张开偏湿、偏高）。
    */
   updateHandSpatialFx(lm: HandLM[] | null): void {
     const t = 0.07
     if (!lm || lm.length < 21) {
       this.loopFilter.frequency.rampTo(20000, t)
       this.loopReverb.wet.rampTo(0, t)
+      this.handSpreadPitchSmoothed +=
+        (0 - this.handSpreadPitchSmoothed) * HAND_SPREAD_PITCH_SMOOTH
+      this.applyCombinedLoopPitch()
       return
     }
     const span = palmSpanXY(lm)
     const fist = isFistLike(lm)
-    const chopScore = chopPoseScore(lm)
-    const wristY = lm[0]!.y
 
     let muffle01 = 0
     if (fist) {
@@ -379,17 +395,26 @@ export class SampleLoopController {
     const maxHz = 20000
     const freq = maxHz - muffle01 * (maxHz - minHz)
 
-    let wet =
-      chopScore * (1 - spatialSmoothstep(wristY, 0.36, 0.68))
-    wet = Math.max(0, Math.min(0.52, wet))
+    const spread01 = thumbIndexSpread01(lm)
+    const wet = Math.max(0, Math.min(0.58, spread01))
+
+    const spreadPitchTarget =
+      (spread01 * 2 - 1) * HAND_SPREAD_PITCH_SEMITONE_RANGE
+    this.handSpreadPitchSmoothed +=
+      (spreadPitchTarget - this.handSpreadPitchSmoothed) *
+      HAND_SPREAD_PITCH_SMOOTH
 
     this.loopFilter.frequency.rampTo(freq, t)
     this.loopReverb.wet.rampTo(wet, t)
+    this.applyCombinedLoopPitch()
   }
 
   /** HUD：当前相对原调的音高倍率（≈ 2^(半音/12)，playbackRate 恒为 1） */
   getUiPlaybackRate(): number {
-    return Math.pow(2, this.beatPitchSemitones / 12)
+    return Math.pow(
+      2,
+      (this.beatPitchSemitones + this.handSpreadPitchSmoothed) / 12,
+    )
   }
 
   /** 主循环采样是否在播放 */
@@ -451,6 +476,12 @@ export class SampleLoopController {
       /* noop */
     }
     this.gain.gain.value = 0
+    this.handSpreadPitchSmoothed = 0
+    try {
+      this.loopPitchShift.pitch = this.beatPitchSemitones
+    } catch {
+      /* noop */
+    }
   }
 
   dispose(): void {

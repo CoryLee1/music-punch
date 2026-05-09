@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { GestureStage } from './components/GestureStage'
 import { ControlPanel } from './components/ControlPanel'
 import { EmotionInput } from './components/EmotionInput'
+import { PunchOverCanvasOverlay } from './components/PunchOverCanvasOverlay'
 import type { AppPhase } from './components/ControlPanel'
 import type { GestureHit } from './lib/handGestures'
 import type { ParticlePunchHandle } from './components/ParticlePunchOverlay'
@@ -137,8 +138,8 @@ function PunchConfettiBurst({
         const r3 = ((seed >>> 16) % 1000) / 1000
         const isRibbon = i % 3 !== 0
         const bg = isRibbon
-          ? 'rgba(252, 248, 255, 0.9)'
-          : 'rgba(24, 22, 32, 0.82)'
+          ? 'rgba(0, 189, 214, 0.88)'
+          : 'rgba(42, 40, 52, 0.82)'
         const dx = `${(r2 - 0.5) * 280}px`
         const rot = `${(r3 - 0.5) * 920}deg`
         return {
@@ -210,7 +211,6 @@ export default function App() {
   const [punchTimeLeft, setPunchTimeLeft] = useState(PUNCH_GAME_SEC)
   const [punchConfettiActive, setPunchConfettiActive] = useState(false)
   const [punchConfettiKey, setPunchConfettiKey] = useState(0)
-  const [punchBossClear, setPunchBossClear] = useState(false)
   const [textPhysicsJob, setTextPhysicsJob] = useState<TextPhysicsJob | null>(null)
 
   /* ───── refs ───── */
@@ -283,7 +283,6 @@ export default function App() {
     setPunchHitTick(0)
     setPunchCombo(0)
     setPunchComboMax(0)
-    setPunchBossClear(false)
     setPunchConfettiActive(false)
     setPunchPhase('running')
   }, [])
@@ -306,19 +305,20 @@ export default function App() {
 
   const onBossDefeated = useCallback(() => {
     onPunchHit()
-    setPunchBossClear(true)
-    setPunchConfettiKey((k) => k + 1)
-    setPunchConfettiActive(true)
     setPunchPhase('ended')
   }, [onPunchHit])
+
+  useEffect(() => {
+    if (punchPhase !== 'ended') return
+    setPunchConfettiKey((k) => k + 1)
+    setPunchConfettiActive(true)
+  }, [punchPhase])
 
   useEffect(() => {
     if (!punchConfettiActive) return
     const t = window.setTimeout(() => setPunchConfettiActive(false), 5200)
     return () => window.clearTimeout(t)
   }, [punchConfettiActive, punchConfettiKey])
-
-  // Punch 回合倒计时
   useEffect(() => {
     if (punchPhase !== 'running') return
     const t0 = Date.now()
@@ -340,7 +340,6 @@ export default function App() {
 
   const dismissPunchEnded = useCallback(() => {
     setPunchConfettiActive(false)
-    setPunchBossClear(false)
     setPunchPhase('idle')
   }, [])
 
@@ -407,7 +406,6 @@ export default function App() {
     setPunchCombo(0)
     setPunchComboMax(0)
     setPunchConfettiActive(false)
-    setPunchBossClear(false)
     punchHandleRef.current?.resetPunchRound()
   }, [])
 
@@ -425,24 +423,20 @@ export default function App() {
         </div>
       )}
 
-      {/* Punch 回合结束弹窗 */}
-      <PunchConfettiBurst active={punchConfettiActive} burstKey={punchConfettiKey} />
+      {punchPhase === 'ended' ? (
+        <PunchOverCanvasOverlay
+          visible
+          score={punchScore}
+          comboMax={punchComboMax}
+          onDismiss={dismissPunchEnded}
+          autoExplodeDelayMs={120}
+        />
+      ) : null}
 
-      {punchPhase === 'ended' && (
-        <div className="punch-game-end-modal" role="dialog">
-          <div className="punch-game-end-card">
-            <h2 className="punch-end-heading">PUNCH ROUND · 结束</h2>
-            {punchBossClear ? (
-              <p className="punch-end-boss-tag">BOSS CLEARED · PUNCH OVER</p>
-            ) : null}
-            <p className="punch-final-score">得分 · {punchScore}</p>
-            <p className="punch-final-combo">最大连击 · ×{punchComboMax}</p>
-            <button type="button" className="punch-end-dismiss" onClick={dismissPunchEnded}>
-              // CLOSE
-            </button>
-          </div>
-        </div>
-      )}
+      <PunchConfettiBurst
+        active={punchConfettiActive && punchPhase === 'ended'}
+        burstKey={punchConfettiKey}
+      />
 
       {/* 主内容区 */}
       <div className="app-main">

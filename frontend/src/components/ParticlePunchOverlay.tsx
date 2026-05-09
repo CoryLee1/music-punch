@@ -34,15 +34,19 @@ type Props = {
 }
 
 /** 普通球清场次数达到此值后出现 Boss */
-const NORMAL_CLEARS_FOR_BOSS = 15
+const NORMAL_CLEARS_FOR_BOSS = 10
 
 const SPHERE_R = 1.12
 const COLLIDER_R = 1.34
-/** 用户文字精灵高度（世界单位），略大便于读 */
-const USER_SPRITE_BASE_H_CJK = 0.175
-const USER_SPRITE_BASE_H_WORD = 0.138
-const WIDTH_SEG = 52
-const HEIGHT_SEG = 38
+/** 用户文字精灵高度（世界单位） */
+const USER_SPRITE_BASE_H_CJK = 0.13
+const USER_SPRITE_BASE_H_WORD = 0.102
+/** 球面采样点数（Fibonacci 均匀分布，接近参考图的细腻排布） */
+const FIBONACCI_SURFACE_COUNT = 2000
+
+/** 球面粒子（点、符号字粒、用户字）主色 — 深灰 */
+const SPHERE_PARTICLE_CSS = '#3a3a42'
+const SPHERE_DOT_SOFT = { r: 58, g: 58, b: 66 } as const
 
 function fract(n: number) {
   return n - Math.floor(n)
@@ -68,6 +72,25 @@ function classifyVertex(i: number, total: number):
   return 'dot'
 }
 
+/** 斐波那契球面点：近似均匀、带「经纬」秩序感，减轻 UV 球顶点堆叠感 */
+function fibonacciSphereSurface(
+  radius: number,
+  count: number,
+): THREE.Vector3[] {
+  const pts: THREE.Vector3[] = []
+  if (count <= 0) return pts
+  const inc = Math.PI * (3 - Math.sqrt(5))
+  for (let i = 0; i < count; i++) {
+    const y = count > 1 ? 1 - (i / (count - 1)) * 2 : 0
+    const rr = Math.sqrt(Math.max(0, 1 - y * y))
+    const phi = inc * i
+    const x = Math.cos(phi) * rr * radius
+    const z = Math.sin(phi) * rr * radius
+    pts.push(new THREE.Vector3(x, y * radius, z))
+  }
+  return pts
+}
+
 function makeSoftDotTexture(): THREE.CanvasTexture {
   const s = 64
   const c = document.createElement('canvas')
@@ -75,9 +98,10 @@ function makeSoftDotTexture(): THREE.CanvasTexture {
   c.height = s
   const g = c.getContext('2d')!
   const grd = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2)
-  grd.addColorStop(0, 'rgba(255,255,255,1)')
-  grd.addColorStop(0.35, 'rgba(255,255,255,0.45)')
-  grd.addColorStop(1, 'rgba(255,255,255,0)')
+  const { r, g: gg, b } = SPHERE_DOT_SOFT
+  grd.addColorStop(0, `rgba(${r},${gg},${b},1)`)
+  grd.addColorStop(0.35, `rgba(${r},${gg},${b},0.45)`)
+  grd.addColorStop(1, `rgba(${r},${gg},${b},0)`)
   g.fillStyle = grd
   g.fillRect(0, 0, s, s)
   const t = new THREE.CanvasTexture(c)
@@ -95,11 +119,11 @@ function makeCharTexture(ch: string): THREE.CanvasTexture {
   g.clearRect(0, 0, s, s)
   const isCjk = /[\u4e00-\u9fff\u3400-\u4dbf]/u.test(ch)
   g.font = isCjk
-    ? '600 80px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, sans-serif'
-    : 'bold 82px "IBM Plex Mono", "Space Mono", ui-monospace, monospace'
+    ? '200 54px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, sans-serif'
+    : latinFont(56)
   g.textAlign = 'center'
   g.textBaseline = 'middle'
-  g.fillStyle = '#ffffff'
+  g.fillStyle = SPHERE_PARTICLE_CSS
   g.fillText(ch, s / 2, s / 2 + 4)
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
@@ -149,7 +173,10 @@ function tokenizeForParticles(fragment: string): string[] {
 }
 
 const latinFont = (px: number) =>
-  `bold ${px}px "IBM Plex Mono", "Space Mono", ui-monospace, monospace`
+  `200 ${px}px "IBM Plex Mono", "Space Mono", ui-monospace, monospace`
+
+const userLatinFont = (px: number) =>
+  `200 ${px}px "IBM Plex Mono", "Space Mono", ui-monospace, monospace`
 
 /** 用户粒子贴图：单字 CJK、单词用横向画布 */
 function makeUserParticleTexture(token: string): THREE.CanvasTexture {
@@ -164,10 +191,10 @@ function makeUserParticleTexture(token: string): THREE.CanvasTexture {
     const g = c.getContext('2d')!
     g.clearRect(0, 0, s, s)
     g.font =
-      '600 90px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, sans-serif'
+      '200 56px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, sans-serif'
     g.textAlign = 'center'
     g.textBaseline = 'middle'
-    g.fillStyle = '#ffffff'
+    g.fillStyle = SPHERE_PARTICLE_CSS
     g.fillText(token, s / 2, s / 2 + 4)
     const t = new THREE.CanvasTexture(c)
     t.colorSpace = THREE.SRGBColorSpace
@@ -184,10 +211,10 @@ function makeUserParticleTexture(token: string): THREE.CanvasTexture {
     c.height = s
     const g = c.getContext('2d')!
     g.clearRect(0, 0, s, s)
-    g.font = latinFont(92)
+    g.font = userLatinFont(56)
     g.textAlign = 'center'
     g.textBaseline = 'middle'
-    g.fillStyle = '#ffffff'
+    g.fillStyle = SPHERE_PARTICLE_CSS
     g.fillText(token, s / 2, s / 2 + 4)
     const t = new THREE.CanvasTexture(c)
     t.colorSpace = THREE.SRGBColorSpace
@@ -198,13 +225,13 @@ function makeUserParticleTexture(token: string): THREE.CanvasTexture {
   const pad = 20
   const maxCanvasW = 720
   const h = 128
-  let fontPx = 80
+  let fontPx = 54
   const measureCv = document.createElement('canvas')
   const mg = measureCv.getContext('2d')!
   let outW = 128
 
   while (fontPx >= 24) {
-    mg.font = latinFont(fontPx)
+    mg.font = userLatinFont(fontPx)
     const tw = mg.measureText(token).width + pad * 2
     if (tw <= maxCanvasW) {
       outW = Math.max(128, Math.ceil(tw))
@@ -214,7 +241,7 @@ function makeUserParticleTexture(token: string): THREE.CanvasTexture {
   }
   if (fontPx < 24) {
     fontPx = 24
-    mg.font = latinFont(fontPx)
+    mg.font = userLatinFont(fontPx)
     outW = maxCanvasW
   }
 
@@ -223,10 +250,10 @@ function makeUserParticleTexture(token: string): THREE.CanvasTexture {
   c.height = h
   const g = c.getContext('2d')!
   g.clearRect(0, 0, outW, h)
-  g.font = latinFont(fontPx)
+  g.font = userLatinFont(fontPx)
   g.textAlign = 'center'
   g.textBaseline = 'middle'
-  g.fillStyle = '#ffffff'
+  g.fillStyle = SPHERE_PARTICLE_CSS
   g.fillText(token, outW / 2, h / 2 + 3)
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
@@ -242,16 +269,50 @@ function scaleForUserSprite(tex: THREE.CanvasTexture, isCjkSingle: boolean) {
   return { baseW, baseH }
 }
 
-function randomPointOnSphere(radius: number): THREE.Vector3 {
+/** 用户字粒之间最小球面弧长对应的弦距近似（世界单位），减轻叠字 */
+const USER_SPRITE_MIN_SEPARATION = 0.22
+const MAX_USER_SPRITE_PLACE_TRIES = 56
+
+function randomPointOnSphereUniform(radius: number): THREE.Vector3 {
   const u = Math.random()
   const v = Math.random()
   const theta = 2 * Math.PI * u
   const phi = Math.acos(2 * v - 1)
+  const sinPhi = Math.sin(phi)
   return new THREE.Vector3(
-    radius * Math.sin(phi) * Math.cos(theta),
-    radius * Math.sin(phi) * Math.sin(theta),
+    radius * sinPhi * Math.cos(theta),
+    radius * sinPhi * Math.sin(theta),
     radius * Math.cos(phi),
   )
+}
+
+/** 在球面上取点，尽量与其它「用户字」spr 保持距离（亮面 / 灰面均可） */
+function pickUserSpritePointOnSphere(
+  radius: number,
+  list: {
+    spr: THREE.Sprite
+    kind: string
+  }[],
+  minDist: number,
+): THREE.Vector3 {
+  const minD2 = minDist * minDist
+  for (let attempt = 0; attempt < MAX_USER_SPRITE_PLACE_TRIES; attempt++) {
+    const p = randomPointOnSphereUniform(radius)
+    let ok = true
+    for (const rec of list) {
+      if (rec.kind !== 'user') continue
+      const o = rec.spr.position
+      const dx = p.x - o.x
+      const dy = p.y - o.y
+      const dz = p.z - o.z
+      if (dx * dx + dy * dy + dz * dz < minD2) {
+        ok = false
+        break
+      }
+    }
+    if (ok) return p
+  }
+  return randomPointOnSphereUniform(radius)
 }
 
 function playPunchSfx() {
@@ -338,13 +399,11 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
 
       const raycaster = new THREE.Raycaster()
 
-      const sphereGeom = new THREE.SphereGeometry(
+      const surfacePts = fibonacciSphereSurface(
         SPHERE_R,
-        WIDTH_SEG,
-        HEIGHT_SEG,
+        FIBONACCI_SURFACE_COUNT,
       )
-      const posAttr = sphereGeom.attributes.position as THREE.BufferAttribute
-      const vc = posAttr.count
+      const vc = surfacePts.length
 
       const dotIdx: number[] = []
       const spec: { vi: number; kind: 't1' | 't2' | 'at' | 'amp' | 'pct' }[] =
@@ -363,9 +422,10 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
       const baseDot = new Float32Array(dotIdx.length * 3)
       for (let j = 0; j < dotIdx.length; j++) {
         const vi = dotIdx[j]
-        const x = posAttr.getX(vi)
-        const y = posAttr.getY(vi)
-        const z = posAttr.getZ(vi)
+        const p = surfacePts[vi]
+        const x = p.x
+        const y = p.y
+        const z = p.z
         baseDot[j * 3] = x
         baseDot[j * 3 + 1] = y
         baseDot[j * 3 + 2] = z
@@ -381,7 +441,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
       const dotsMat = new THREE.PointsMaterial({
         map: dotTexture,
         color: 0xffffff,
-        size: 0.042,
+        size: 0.03,
         sizeAttenuation: true,
         transparent: true,
         opacity: 0.92,
@@ -418,11 +478,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
 
       for (const s of spec) {
         const vi = s.vi
-        const v = new THREE.Vector3(
-          posAttr.getX(vi),
-          posAttr.getY(vi),
-          posAttr.getZ(vi),
-        )
+        const v = surfacePts[vi].clone()
         const mat = new THREE.SpriteMaterial({
           map: texFor(s.kind),
           transparent: true,
@@ -432,7 +488,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         })
         const spr = new THREE.Sprite(mat)
         const sc =
-          s.kind === 't1' || s.kind === 't2' ? 0.11 : 0.085
+          s.kind === 't1' || s.kind === 't2' ? 0.072 : 0.056
         spr.scale.set(sc, sc, sc)
         spr.position.copy(v)
         root.add(spr)
@@ -448,8 +504,6 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
       const baseSpriteCount = spriteList.length
       const MAX_USER_SPRITES = 120
       const MAX_USER_TOKENS_PER_APPEND = 36
-
-      sphereGeom.dispose()
 
       let exploding = false
       let explodeT = 0
@@ -593,7 +647,13 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
             tok.length === 1 && CJK_RANGE_RE.test(tok)
           const { baseW, baseH } = scaleForUserSprite(tex, isCjkSingle)
           spr.scale.set(baseW, baseH, 1)
-          const p = randomPointOnSphere(SPHERE_R * 1.06)
+          const girth = Math.max(baseW, baseH)
+          const minD = Math.max(USER_SPRITE_MIN_SEPARATION, girth * 0.5)
+          const p = pickUserSpritePointOnSphere(
+            SPHERE_R * 1.06,
+            spriteList,
+            minD,
+          )
           spr.position.copy(p)
           root.add(spr)
           spriteList.push({
