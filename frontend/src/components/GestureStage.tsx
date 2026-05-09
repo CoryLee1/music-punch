@@ -683,34 +683,6 @@ export function GestureStage({
   }, [])
 
   useEffect(() => {
-    const host = canvasHostRef.current
-    if (!host) return
-
-    const applyLayout = (width: number, height: number) => {
-      const w = Math.max(2, Math.round(width))
-      const h = Math.max(2, Math.round(height))
-      canvasLayoutRef.current = { w, h }
-      const mc = matterCanvasRef.current
-      if (mc && sequencePhaseRef.current !== 'matter') {
-        if (mc.width !== w || mc.height !== h) {
-          mc.width = w
-          mc.height = h
-        }
-      }
-    }
-
-    const ro = new ResizeObserver((entries) => {
-      const cr = entries[0]?.contentRect
-      if (!cr || cr.width < 1 || cr.height < 1) return
-      applyLayout(cr.width, cr.height)
-    })
-    ro.observe(host)
-    applyLayout(host.clientWidth, host.clientHeight)
-
-    return () => ro.disconnect()
-  }, [])
-
-  useEffect(() => {
     if (!textPhysicsJob) return
     const { text } = textPhysicsJob
     setSequencePhase('scan')

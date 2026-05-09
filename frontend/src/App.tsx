@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-
 import { GestureStage } from './components/GestureStage'
 import { ControlPanel } from './components/ControlPanel'
 import { EmotionInput } from './components/EmotionInput'
@@ -100,7 +99,6 @@ function TypoHeader() {
     </header>
   )
 }
-
 
 export default function App() {
   /* ───── 原有 UI 状态 ───── */
@@ -444,7 +442,6 @@ export default function App() {
           )}
         </div>
       </div>
-
     </div>
   )
 }
