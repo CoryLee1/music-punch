@@ -37,14 +37,12 @@ type Props = {
 const NORMAL_CLEARS_FOR_BOSS = 20
 /** 同时存在的普通粒子球数量 */
 const NORMAL_SPHERE_COUNT = 3
-/** 相邻普通球锚点在 X 上的间距（世界单位） */
-const NORMAL_SPHERE_SPACING_X = 1.05
 
-const SPHERE_R = 1.12
-const COLLIDER_R = 1.34
+const SPHERE_R = 0.68
+const COLLIDER_R = 0.84
 /** 用户文字精灵高度（世界单位） */
-const USER_SPRITE_BASE_H_CJK = 0.13
-const USER_SPRITE_BASE_H_WORD = 0.102
+const USER_SPRITE_BASE_H_CJK = 0.145
+const USER_SPRITE_BASE_H_WORD = 0.114
 /** 球面采样点数（Fibonacci 均匀分布，接近参考图的细腻排布） */
 const FIBONACCI_SURFACE_COUNT = 2000
 
@@ -195,7 +193,7 @@ function makeUserParticleTexture(token: string): THREE.CanvasTexture {
     const g = c.getContext('2d')!
     g.clearRect(0, 0, s, s)
     g.font =
-      '200 56px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, sans-serif'
+      '200 60px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, sans-serif'
     g.textAlign = 'center'
     g.textBaseline = 'middle'
     g.fillStyle = SPHERE_PARTICLE_CSS
@@ -215,7 +213,7 @@ function makeUserParticleTexture(token: string): THREE.CanvasTexture {
     c.height = s
     const g = c.getContext('2d')!
     g.clearRect(0, 0, s, s)
-    g.font = userLatinFont(56)
+    g.font = userLatinFont(60)
     g.textAlign = 'center'
     g.textBaseline = 'middle'
     g.fillStyle = SPHERE_PARTICLE_CSS
@@ -229,7 +227,7 @@ function makeUserParticleTexture(token: string): THREE.CanvasTexture {
   const pad = 20
   const maxCanvasW = 720
   const h = 128
-  let fontPx = 54
+  let fontPx = 58
   const measureCv = document.createElement('canvas')
   const mg = measureCv.getContext('2d')!
   let outW = 128
@@ -352,7 +350,11 @@ type PunchSphereSlot = {
   velSprite: THREE.Vector3[]
   baseSpriteCount: number
   driftPhase: number
+  wanderPhase: number
   baseX: number
+  baseZ: number
+  /** 每球独立大小（root / collider 统一缩放） */
+  visualScale: number
   exploding: boolean
   explodeT: number
   cooldownUntil: number
@@ -456,19 +458,63 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         return charTex.pct
       }
 
-      function createSlot(baseX: number, driftPhase: number): PunchSphereSlot {
+      function randomNormalLayouts(): { x: number; z: number; scale: number }[] {
+        /** 两球有效边界之间的额外空隙（含粒子晕；略抑漂移靠近） */
+        const GAP = 0.58
+        const S_MIN = 0.72
+        const S_MAX = 1.14
+        const RANGE_X = 1.72
+        const RANGE_Z = 1.08
+        for (let attempt = 0; attempt < 360; attempt++) {
+          const pts: { x: number; z: number; scale: number }[] = []
+          for (let k = 0; k < NORMAL_SPHERE_COUNT; k++) {
+            pts.push({
+              x: (Math.random() * 2 - 1) * RANGE_X,
+              z: (Math.random() * 2 - 1) * RANGE_Z,
+              scale: S_MIN + Math.random() * (S_MAX - S_MIN),
+            })
+          }
+          let ok = true
+          for (let i = 0; i < NORMAL_SPHERE_COUNT; i++) {
+            for (let j = i + 1; j < NORMAL_SPHERE_COUNT; j++) {
+              const a = pts[i]!
+              const b = pts[j]!
+              const dx = a.x - b.x
+              const dz = a.z - b.z
+              const rVis =
+                SPHERE_R * 1.1 * a.scale + SPHERE_R * 1.1 * b.scale + GAP
+              if (Math.hypot(dx, dz) < rVis) ok = false
+            }
+          }
+          if (ok) return pts
+        }
+        return [
+          { x: -1.58, z: 0.08, scale: 0.88 },
+          { x: 0.38, z: -1.02, scale: 1.04 },
+          { x: 1.52, z: 0.62, scale: 0.78 },
+        ]
+      }
+
+      function createSlot(
+        baseX: number,
+        baseZ: number,
+        visualScale: number,
+        driftPhase: number,
+      ): PunchSphereSlot {
         const anchor = new THREE.Group()
-        anchor.position.set(baseX, 0, 0)
+        anchor.position.set(baseX, 0, baseZ)
         scene.add(anchor)
 
         const root = new THREE.Group()
         anchor.add(root)
+        root.scale.setScalar(visualScale)
 
         const collider = new THREE.Mesh(
           new THREE.SphereGeometry(COLLIDER_R, 20, 16),
           new THREE.MeshBasicMaterial({ visible: false }),
         )
         anchor.add(collider)
+        collider.scale.setScalar(visualScale)
 
         const dotPos = new Float32Array(dotIdx.length * 3)
         const baseDot = new Float32Array(dotIdx.length * 3)
@@ -488,7 +534,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         const dotsMat = new THREE.PointsMaterial({
           map: dotTexture,
           color: 0xffffff,
-          size: 0.03,
+          size: 0.02,
           sizeAttenuation: true,
           transparent: true,
           opacity: 0.92,
@@ -512,7 +558,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
           })
           const spr = new THREE.Sprite(mat)
           const sc =
-            s.kind === 't1' || s.kind === 't2' ? 0.072 : 0.056
+            s.kind === 't1' || s.kind === 't2' ? 0.044 : 0.034
           spr.scale.set(sc, sc, sc)
           spr.position.copy(v)
           root.add(spr)
@@ -543,24 +589,37 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
           velSprite,
           baseSpriteCount,
           driftPhase,
+          wanderPhase: Math.random() * Math.PI * 2,
           baseX,
+          baseZ,
+          visualScale,
           exploding: false,
           explodeT: 0,
           cooldownUntil: 0,
         }
       }
 
-      const halfRow =
-        ((NORMAL_SPHERE_COUNT - 1) * NORMAL_SPHERE_SPACING_X) / 2
-      const normalSlots: PunchSphereSlot[] = []
-      for (let i = 0; i < NORMAL_SPHERE_COUNT; i++) {
-        const t =
-          NORMAL_SPHERE_COUNT > 1 ? i / (NORMAL_SPHERE_COUNT - 1) : 0.5
-        const baseX = -halfRow + t * (2 * halfRow)
-        normalSlots.push(createSlot(baseX, i * 1.84 + Math.random() * 0.35))
+      const layout0 = randomNormalLayouts()
+      const normalSlots: PunchSphereSlot[] = layout0.map((p, i) =>
+        createSlot(p.x, p.z, p.scale, i * 1.2 + Math.random() * 0.55),
+      )
+
+      function relayoutNormalSlots(): void {
+        const L = randomNormalLayouts()
+        for (let i = 0; i < normalSlots.length; i++) {
+          const slot = normalSlots[i]!
+          const p = L[i]!
+          slot.baseX = p.x
+          slot.baseZ = p.z
+          slot.visualScale = p.scale
+          slot.driftPhase = Math.random() * Math.PI * 2
+          slot.wanderPhase = Math.random() * Math.PI * 2
+          slot.root.scale.setScalar(p.scale)
+          slot.collider.scale.setScalar(p.scale)
+        }
       }
 
-      const bossSlot = createSlot(0, 4.17)
+      const bossSlot = createSlot(0, 0, 1, 4.17)
       bossSlot.anchor.visible = false
 
       const MAX_USER_SPRITES = 120
@@ -626,6 +685,10 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
           rec.spr.scale.set(rec.baseScaleX, rec.baseScaleY, 1)
         }
         slot.dotsMat.opacity = 0.92
+        if (!(bossMode && slot === bossSlot)) {
+          slot.root.scale.setScalar(slot.visualScale)
+          slot.collider.scale.setScalar(slot.visualScale)
+        }
       }
 
       function enterBossMode() {
@@ -657,6 +720,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         while (bossSlot.spriteList.length > bossSlot.baseSpriteCount) {
           removeUserSpriteAt(bossSlot, bossSlot.spriteList.length - 1)
         }
+        relayoutNormalSlots()
         for (const s of normalSlots) {
           s.anchor.visible = true
           resetSphere(s)
@@ -675,6 +739,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         while (bossSlot.spriteList.length > bossSlot.baseSpriteCount) {
           removeUserSpriteAt(bossSlot, bossSlot.spriteList.length - 1)
         }
+        relayoutNormalSlots()
         for (const s of normalSlots) {
           s.anchor.visible = true
           s.cooldownUntil = 0
@@ -721,11 +786,22 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
       }
 
       function applyDrift(slot: PunchSphereSlot, now: number) {
-        const w = now * 0.00032
         const ph = slot.driftPhase
-        slot.anchor.position.x = slot.baseX + Math.sin(w + ph) * 0.068
-        slot.anchor.position.y = Math.sin(w * 1.21 + ph * 1.86) * 0.05
-        slot.anchor.position.z = Math.cos(w * 0.87 + ph * 1.07) * 0.038
+        const wp = slot.wanderPhase
+        const w = now * 0.00018
+        /** 缓慢上下浮动 */
+        const bob = Math.sin(now * 0.00085 + ph * 1.73) * 0.11
+        /** 水平面内缓慢漂移（绕窝点缓慢画圈 + 小幅摆动） */
+        const wanderT = now * 0.000095
+        const wx =
+          Math.cos(wanderT + wp) * 0.055 +
+          Math.sin(wanderT * 0.62 + ph * 0.8) * 0.024
+        const wz =
+          Math.sin(wanderT + wp) * 0.055 +
+          Math.cos(wanderT * 0.58 + ph * 1.15) * 0.024
+        slot.anchor.position.x = slot.baseX + wx + Math.sin(w + ph) * 0.012
+        slot.anchor.position.y = bob
+        slot.anchor.position.z = slot.baseZ + wz + Math.cos(w * 0.88 + ph) * 0.009
       }
 
       apiRef.current.resetPunchRound = () => {
