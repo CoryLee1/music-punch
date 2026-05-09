@@ -12,7 +12,7 @@ import { PUNCH_SFX_ENABLED } from '../lib/punchSfxConfig'
 export type PunchTryResult =
   | { hit: false }
   | { hit: true; kind: 'normal' }
-  | { hit: true; kind: 'bossGrow'; step: 1 | 2 | 3 | 4 }
+  | { hit: true; kind: 'bossGrow'; step: number }
   | { hit: true; kind: 'bossFinal' }
 
 export type ParticlePunchHandle = {
@@ -62,19 +62,26 @@ function hash01(i: number, salt: number) {
   return fract(Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453)
 }
 
-function classifyVertex(i: number, total: number):
+/** 几何图形类别 */
+type GeoKind =
   | 'dot'
-  | 't1'
-  | 't2'
-  | 'at'
-  | 'amp'
-  | 'pct' {
+  | 'ring'       // 同心圆环
+  | 'cross'      // 十字 +
+  | 'diamond'    // 菱形 ◇
+  | 'triangle'   // 三角形 △
+  | 'dash'       // 短线段 —
+  | 'dotRing'    // 圆点 + 外圈
+  | 'square'     // 小方块 □
+
+function classifyVertex(i: number, total: number): GeoKind {
   const u = hash01(i, total)
-  if (u < 0.012) return 't1'
-  if (u < 0.024) return 't2'
-  if (u < 0.032) return 'at'
-  if (u < 0.04) return 'amp'
-  if (u < 0.048) return 'pct'
+  if (u < 0.014) return 'ring'
+  if (u < 0.026) return 'cross'
+  if (u < 0.036) return 'diamond'
+  if (u < 0.046) return 'triangle'
+  if (u < 0.058) return 'dash'
+  if (u < 0.068) return 'dotRing'
+  if (u < 0.076) return 'square'
   return 'dot'
 }
 
@@ -115,22 +122,107 @@ function makeSoftDotTexture(): THREE.CanvasTexture {
   return t
 }
 
-/** 球面装饰用单字符（@ & %） */
-function makeCharTexture(ch: string): THREE.CanvasTexture {
+/** 球面装饰用几何图形纹理 */
+function makeGeoTexture(kind: GeoKind): THREE.CanvasTexture {
   const s = 128
   const c = document.createElement('canvas')
   c.width = s
   c.height = s
   const g = c.getContext('2d')!
   g.clearRect(0, 0, s, s)
-  const isCjk = /[\u4e00-\u9fff\u3400-\u4dbf]/u.test(ch)
-  g.font = isCjk
-    ? '200 54px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, sans-serif'
-    : latinFont(56)
-  g.textAlign = 'center'
-  g.textBaseline = 'middle'
+  const cx = s / 2
+  const cy = s / 2
+
+  g.strokeStyle = SPHERE_PARTICLE_CSS
   g.fillStyle = SPHERE_PARTICLE_CSS
-  g.fillText(ch, s / 2, s / 2 + 4)
+  g.lineWidth = 1.8
+
+  switch (kind) {
+    case 'ring': {
+      // 同心圆环
+      g.beginPath()
+      g.arc(cx, cy, 28, 0, Math.PI * 2)
+      g.stroke()
+      g.beginPath()
+      g.arc(cx, cy, 18, 0, Math.PI * 2)
+      g.stroke()
+      g.beginPath()
+      g.arc(cx, cy, 5, 0, Math.PI * 2)
+      g.fill()
+      break
+    }
+    case 'cross': {
+      // 十字
+      const arm = 22
+      g.lineWidth = 2
+      g.beginPath()
+      g.moveTo(cx - arm, cy)
+      g.lineTo(cx + arm, cy)
+      g.moveTo(cx, cy - arm)
+      g.lineTo(cx, cy + arm)
+      g.stroke()
+      break
+    }
+    case 'diamond': {
+      // 菱形
+      const d = 24
+      g.lineWidth = 1.6
+      g.beginPath()
+      g.moveTo(cx, cy - d)
+      g.lineTo(cx + d * 0.7, cy)
+      g.lineTo(cx, cy + d)
+      g.lineTo(cx - d * 0.7, cy)
+      g.closePath()
+      g.stroke()
+      break
+    }
+    case 'triangle': {
+      // 三角形
+      const r = 22
+      g.lineWidth = 1.6
+      g.beginPath()
+      g.moveTo(cx, cy - r)
+      g.lineTo(cx + r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6))
+      g.lineTo(cx - r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6))
+      g.closePath()
+      g.stroke()
+      break
+    }
+    case 'dash': {
+      // 短斜线段
+      const len = 20
+      g.lineWidth = 1.8
+      g.beginPath()
+      g.moveTo(cx - len, cy + len * 0.5)
+      g.lineTo(cx + len, cy - len * 0.5)
+      g.stroke()
+      break
+    }
+    case 'dotRing': {
+      // 圆点 + 外圈
+      g.beginPath()
+      g.arc(cx, cy, 22, 0, Math.PI * 2)
+      g.stroke()
+      g.beginPath()
+      g.arc(cx, cy, 6, 0, Math.PI * 2)
+      g.fill()
+      break
+    }
+    case 'square': {
+      // 小方块（轻微旋转增加趣味）
+      const half = 18
+      g.lineWidth = 1.6
+      g.save()
+      g.translate(cx, cy)
+      g.rotate(Math.PI / 12) // 15° 微旋转
+      g.strokeRect(-half, -half, half * 2, half * 2)
+      g.restore()
+      break
+    }
+    default:
+      break
+  }
+
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   t.needsUpdate = true
@@ -437,31 +529,22 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
       const vc = surfacePts.length
 
       const dotIdx: number[] = []
-      const spec: {vi: number; kind: 't1' | 't2' | 'at' | 'amp' | 'pct'}[] = []
+      const spec: {vi: number; kind: GeoKind}[] = []
       for (let i = 0; i < vc; i++) {
         const c = classifyVertex(i, vc)
         if (c === 'dot') dotIdx.push(i)
-        else if (c === 't1') spec.push({ vi: i, kind: 't1' })
-        else if (c === 't2') spec.push({ vi: i, kind: 't2' })
-        else if (c === 'at') spec.push({ vi: i, kind: 'at' })
-        else if (c === 'amp') spec.push({ vi: i, kind: 'amp' })
-        else spec.push({ vi: i, kind: 'pct' })
+        else spec.push({ vi: i, kind: c })
       }
 
       const dotTexture = makeSoftDotTexture()
-      const charTex = {
-        hash: makeCharTexture('#'),
-        at: makeCharTexture('@'),
-        amp: makeCharTexture('&'),
-        pct: makeCharTexture('%'),
-      }
-
-      function texFor(k: string) {
-        if (k === 't1') return charTex.at
-        if (k === 't2') return charTex.hash
-        if (k === 'at') return charTex.at
-        if (k === 'amp') return charTex.amp
-        return charTex.pct
+      const geoTexCache = new Map<GeoKind, THREE.CanvasTexture>()
+      function texFor(k: GeoKind): THREE.CanvasTexture {
+        let t = geoTexCache.get(k)
+        if (!t) {
+          t = makeGeoTexture(k)
+          geoTexCache.set(k, t)
+        }
+        return t
       }
 
       function minNormalPairCenterDistXZ(sa: number, sb: number) {
@@ -546,10 +629,10 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         const dotsMat = new THREE.PointsMaterial({
           map: dotTexture,
           color: 0xffffff,
-          size: 0.02,
+          size: 0.016,
           sizeAttenuation: true,
           transparent: true,
-          opacity: 0.92,
+          opacity: 0.85,
           depthWrite: false,
           blending: THREE.NormalBlending,
           vertexColors: false,
@@ -564,13 +647,25 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
           const mat = new THREE.SpriteMaterial({
             map: texFor(s.kind),
             transparent: true,
-            opacity: 0.94,
+            opacity: 0.82,
             depthWrite: false,
             blending: THREE.NormalBlending,
           })
           const spr = new THREE.Sprite(mat)
-          const sc =
-            s.kind === 't1' || s.kind === 't2' ? 0.044 : 0.034
+          // 根据几何图形类型分配不同大小，增加层次感
+          let sc: number
+          switch (s.kind) {
+            case 'ring':     sc = 0.05; break   // 同心圆较大
+            case 'dotRing':  sc = 0.042; break  // 圆点外圈中等
+            case 'cross':    sc = 0.038; break
+            case 'diamond':  sc = 0.036; break
+            case 'triangle': sc = 0.034; break
+            case 'square':   sc = 0.032; break
+            case 'dash':     sc = 0.028; break  // 短线小巧
+            default:         sc = 0.032; break
+          }
+          // 随机微调 ±15%，打破均匀感
+          sc *= 0.85 + hash01(vi, vc + 7) * 0.3
           spr.scale.set(sc, sc, sc)
           spr.position.copy(v)
           root.add(spr)
@@ -693,11 +788,11 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         for (let i = 0; i < slot.spriteList.length; i++) {
           slot.spriteList[i].spr.position.copy(slot.spriteList[i].base)
           const rec = slot.spriteList[i]
-          const baseOp = rec.kind === 'user' ? 1 : 0.94
+          const baseOp = rec.kind === 'user' ? 1 : 0.82
           ;(rec.spr.material as THREE.SpriteMaterial).opacity = baseOp
           rec.spr.scale.set(rec.baseScaleX, rec.baseScaleY, 1)
         }
-        slot.dotsMat.opacity = 0.92
+        slot.dotsMat.opacity = 0.85
         if (!(bossMode && slot === bossSlot)) {
           slot.root.scale.setScalar(slot.visualScale)
           slot.collider.scale.setScalar(slot.visualScale)
@@ -939,17 +1034,17 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
           const bh = raycaster.intersectObject(bossSlot.collider, false)
           if (bh.length === 0) return { hit: false }
 
-          if (bossHits < 4) {
+          if (bossHits < 7) {
             bossHits += 1
             triggerHitFlash()
             playPunchSfx()
-            bossSlot.root.scale.multiplyScalar(1.1)
-            bossSlot.collider.scale.multiplyScalar(1.06)
+            bossSlot.root.scale.multiplyScalar(1.07)
+            bossSlot.collider.scale.multiplyScalar(1.04)
             bossSlot.cooldownUntil = now + bossGrowCooldownMs
             return {
               hit: true,
               kind: 'bossGrow',
-              step: bossHits as 1 | 2 | 3 | 4,
+              step: bossHits,
             }
           }
           beginExplode(bossSlot, 'bossFinal')
@@ -1019,13 +1114,13 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
           slot.velDot[j * 3 + 2] *= 0.985
         }
         slot.dotGeo.attributes.position.needsUpdate = true
-        slot.dotsMat.opacity = 0.92 * fade
+        slot.dotsMat.opacity = 0.85 * fade
 
         for (let i = 0; i < slot.spriteList.length; i++) {
           const sp = slot.spriteList[i].spr
           sp.position.addScaledVector(slot.velSprite[i], dt)
           slot.velSprite[i].multiplyScalar(0.982)
-          const baseOp = slot.spriteList[i].kind === 'user' ? 1 : 0.94
+          const baseOp = slot.spriteList[i].kind === 'user' ? 1 : 0.82
           ;(sp.material as THREE.SpriteMaterial).opacity = baseOp * fade
           sp.scale.multiplyScalar(0.99)
         }
@@ -1080,10 +1175,8 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         apiRef.current.appendUserTextParticles = () => {}
         apiRef.current.resetPunchRound = () => {}
         dotTexture.dispose()
-        charTex.hash.dispose()
-        charTex.at.dispose()
-        charTex.amp.dispose()
-        charTex.pct.dispose()
+        for (const t of geoTexCache.values()) t.dispose()
+        geoTexCache.clear()
         for (const slot of allSlots()) {
           slot.root.remove(slot.dotPoints)
           slot.dotGeo.dispose()

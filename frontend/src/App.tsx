@@ -4,6 +4,7 @@ import { ControlPanel } from './components/ControlPanel'
 import { EmotionInput } from './components/EmotionInput'
 import { PunchOverCanvasOverlay } from './components/PunchOverCanvasOverlay'
 import { SmashEasterEgg } from './components/SmashEasterEgg'
+import { SplashScreen } from './components/SplashScreen'
 import type { AppPhase } from './components/ControlPanel'
 import type { GestureHit } from './lib/handGestures'
 import type { ParticlePunchHandle } from './components/ParticlePunchOverlay'
@@ -101,6 +102,20 @@ function TypoHeader() {
 }
 
 export default function App() {
+  /* ───── Splash 开屏状态 ───── */
+  const [showSplash, setShowSplash] = useState(true)
+  const [splashExiting, setSplashExiting] = useState(false)
+
+  const handleSplashComplete = useCallback(() => {
+    // 爆炸粒子落地后：先开始退出动画
+    setSplashExiting(true)
+    // 等退出动画完成后再真正移除 splash、显示主 UI
+    setTimeout(() => {
+      setShowSplash(false)
+      setSplashExiting(false)
+    }, 900) // 与 CSS 过渡时长匹配
+  }, [])
+
   /* ───── 原有 UI 状态 ───── */
   const [apiState, setApiState] = useState<'idle' | 'ok' | 'err'>('idle')
   const [phase, setPhase] = useState<AppPhase>('idle')
@@ -278,6 +293,12 @@ export default function App() {
     setPunchPhase('idle')
   }, [])
 
+  /** 重来一次：关闭 overlay → 立即重启 Punch 回合 */
+  const restartPunchRound = useCallback(() => {
+    setPunchConfettiActive(false)
+    startPunchRound()
+  }, [startPunchRound])
+
   const onTextPhysicsComplete = useCallback(() => setTextPhysicsJob(null), [])
 
   const submitPhysicsText = useCallback((raw: string) => {
@@ -348,6 +369,55 @@ export default function App() {
 
   const inputDisabled = phase !== 'idle' && phase !== 'over'
 
+  /* ───── Splash 开屏阶段 ───── */
+  if (showSplash) {
+    return (
+      <div className={`splash-root ${splashExiting ? 'splash-exiting' : ''}`}>
+        <SplashScreen onComplete={handleSplashComplete} />
+        {/* 主 UI 在 splash 退出动画期间提前渲染（在背后），实现无缝过渡 */}
+        {splashExiting && (
+          <div className={`app-reveal ${expanded ? 'is-expanded' : 'is-collapsed'} app-reveal-active`}>
+            <TypoHeader />
+            <div className="app-main">
+              <div className="app-left" />
+              <div className="app-center-col">
+                <ControlPanel
+                  phase={phase}
+                  emotion={emotion}
+                  elapsed={elapsed}
+                  isPaused={isPaused}
+                  onTogglePause={handleTogglePause}
+                  onStop={handleStop}
+                  onReset={handleReset}
+                  apiState={apiState}
+                  gestureBanner={gestureBanner}
+                  clipLabel={clipLabel}
+                  audioStarted={audioStarted}
+                  videoRef={videoRef}
+                  cameraReady={cameraReady}
+                />
+                {!expanded && (
+                  <div className="app-collapsed-input">
+                    <EmotionInput
+                      disabled={false}
+                      phase={phase}
+                      onSubmit={handleEmotionSubmit}
+                      onReset={handleReset}
+                      onToggleExpand={handleToggleExpand}
+                      isExpanded={expanded}
+                      onEasterEgg={() => setEasterEggVisible((v) => !v)}
+                      easterEggActive={easterEggVisible}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className={`app ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
       {/* 装饰性排版头部 */}
@@ -360,16 +430,6 @@ export default function App() {
           ))}
         </div>
       )}
-
-      {punchPhase === 'ended' ? (
-        <PunchOverCanvasOverlay
-          visible
-          score={punchScore}
-          comboMax={punchComboMax}
-          onDismiss={dismissPunchEnded}
-          autoExplodeDelayMs={120}
-        />
-      ) : null}
 
       <PunchConfettiBurst
         active={punchConfettiActive && punchPhase === 'ended'}
@@ -402,6 +462,17 @@ export default function App() {
           {easterEggVisible && (
             <SmashEasterEgg cameraStream={cameraStream} />
           )}
+          {/* Punch Over 覆盖层 — 仅覆盖左侧面板 */}
+          {punchPhase === 'ended' ? (
+            <PunchOverCanvasOverlay
+              visible
+              score={punchScore}
+              comboMax={punchComboMax}
+              onDismiss={dismissPunchEnded}
+              onRestart={restartPunchRound}
+              autoExplodeDelayMs={2100}
+            />
+          ) : null}
           {expanded && (
             <EmotionInput
               disabled={inputDisabled}

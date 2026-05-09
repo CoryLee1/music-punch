@@ -225,10 +225,11 @@ function drawBeatActionHint(
   ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, ${alpha})`
   ctx.fillText(label, 0, 0)
 
-  // 中文副标
-  ctx.font = '11px "IBM Plex Mono", monospace'
+  // 中文副标 — 居中对齐
+  ctx.font = '500 12px "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif'
+  ctx.textAlign = 'center'
   ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, ${alpha * 0.65})`
-  ctx.fillText(zhLabel, 0, 22)
+  ctx.fillText(zhLabel, 0, 24)
 
   // 节拍条 — 拍点处亮，逐渐收窄
   const barW = 120 * pulse
@@ -717,18 +718,21 @@ export function GestureStage({
           ac.getPlaybackSyncGeneration(),
         )
         // ── beat action hint（canvas 上直接绘制 PUNCH/CHOP 提示）──
-        const beats = beatTimesForBufferDuration(BEATS_META, dur)
-        const tau = beatLocalTau(pos, dur, beats)
-        if (beatHintPrevPosRef.current !== null) {
-          beatHintCountRef.current += countBeatCrossings(
-            beatHintPrevPosRef.current,
-            pos,
-            dur,
-            beats,
-          )
+        // 仅在 Punch 游戏进行中才显示 PUNCH/CHOP 引导提示
+        if (punchGameOn) {
+          const beats = beatTimesForBufferDuration(BEATS_META, dur)
+          const tau = beatLocalTau(pos, dur, beats)
+          if (beatHintPrevPosRef.current !== null) {
+            beatHintCountRef.current += countBeatCrossings(
+              beatHintPrevPosRef.current,
+              pos,
+              dur,
+              beats,
+            )
+          }
+          beatHintPrevPosRef.current = pos
+          drawBeatActionHint(ctx, w, h, tau, beatHintCountRef.current)
         }
-        beatHintPrevPosRef.current = pos
-        drawBeatActionHint(ctx, w, h, tau, beatHintCountRef.current)
       } else if (punchGameOn) {
         const dur = BEAT_GUIDE_FALLBACK_DURATION_SEC
         const t =

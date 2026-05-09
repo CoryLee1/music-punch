@@ -9,6 +9,7 @@ type Props = {
   score: number
   comboMax: number
   onDismiss: () => void
+  onRestart?: () => void
   autoExplodeDelayMs?: number
 }
 
@@ -117,6 +118,7 @@ export function PunchOverCanvasOverlay({
   score,
   comboMax,
   onDismiss,
+  onRestart,
   autoExplodeDelayMs = 100,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -183,10 +185,18 @@ export function PunchOverCanvasOverlay({
       particles.push(...next)
     }
 
+    /** 取容器尺寸（覆盖左侧面板而非全屏） */
+    const getContainerSize = () => {
+      const parent = canvas.parentElement
+      if (parent) return { w: parent.clientWidth, h: parent.clientHeight }
+      return { w: window.innerWidth, h: window.innerHeight }
+    }
+
     const resize = () => {
       if (exploded) return
-      w = window.innerWidth
-      h = window.innerHeight
+      const sz = getContainerSize()
+      w = sz.w
+      h = sz.h
       canvas.width = w
       canvas.height = h
       syncParticlesFromBuild()
@@ -239,8 +249,9 @@ export function PunchOverCanvasOverlay({
         resetAfterIdleT = window.setTimeout(() => {
           if (!alive) return
           exploded = false
-          w = window.innerWidth
-          h = window.innerHeight
+          const sz = getContainerSize()
+          w = sz.w
+          h = sz.h
           canvas.width = w
           canvas.height = h
           syncParticlesFromBuild()
@@ -324,19 +335,31 @@ export function PunchOverCanvasOverlay({
     <div className="punch-over-fullscreen" role="presentation">
       <canvas ref={canvasRef} className="punch-over-canvas" aria-hidden />
       <div ref={hintRef} className="punch-over-hint">
-        CLICK TO EXPLODE
+        <span className="punch-over-hint-en">CLICK TO EXPLODE</span>
+        <span className="punch-over-hint-zh">点击引爆</span>
       </div>
       <footer className="punch-over-footer">
         <span className="punch-over-stats">
           // SCORE · {score} · MAX COMBO ×{comboMax}
         </span>
-        <button
-          type="button"
-          className="punch-over-dismiss"
-          onClick={onDismiss}
-        >
-          // CLOSE
-        </button>
+        <div className="punch-over-actions">
+          {onRestart && (
+            <button
+              type="button"
+              className="punch-over-restart"
+              onClick={onRestart}
+            >
+              ↻ 重来一次
+            </button>
+          )}
+          <button
+            type="button"
+            className="punch-over-dismiss"
+            onClick={onDismiss}
+          >
+            // CLOSE
+          </button>
+        </div>
       </footer>
     </div>
   )
