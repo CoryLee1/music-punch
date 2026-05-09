@@ -840,6 +840,8 @@ export function GestureStage({
       drawSystemHeader(ctx)
       if (!audioOn) drawStartPrompt(ctx, w, h)
 
+      if (!result) drawCameraWaiting(ctx, w, h)
+
       const hands = mirrorLandmarksFromCamera(result?.landmarks)
 
       if (sequencePhaseRef.current === 'matter' && hands.length > 0) {

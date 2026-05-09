@@ -282,11 +282,6 @@ export default function App() {
     if (punchPhase !== 'running') startPunchRound()
   }, [phase, punchPhase, startPunchRound])
 
-  /* ───── 错误管理 ───── */
-  const addError = useCallback((msg: string) => {
-    setErrors((prev) => [...prev.slice(-4), msg])
-  }, [])
-
   /* ───── 手动停止 ───── */
   const handleStop = useCallback(() => {
     if (phase === 'active') {
@@ -308,11 +303,6 @@ export default function App() {
     },
     [phase, submitPhysicsText],
   )
-
-  /* ───── 手势命中回调 ───── */
-  const handleGestureHit = useCallback((hit: GestureHit) => {
-    setGestureBanner(hit)
-  }, [])
 
   /* ───── 暂停/继续 ───── */
   const handleTogglePause = useCallback(() => setIsPaused((p) => !p), [])

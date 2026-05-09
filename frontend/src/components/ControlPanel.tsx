@@ -564,6 +564,9 @@ export function ControlPanel({
   videoRef,
   cameraReady = false,
 }: ControlPanelProps) {
+  void emotion
+  void onReset
+
   const waveCanvasRef = useWaveformVisualizer(phase)
   const hudCanvasRef = useCameraHUD(videoRef, cameraReady)
   const animPaused = phase === 'active' || phase === 'ending'
