@@ -8,19 +8,33 @@ import * as THREE from 'three'
 
 import { PUNCH_SFX_ENABLED } from '../lib/punchSfxConfig'
 
+/** 普通关卡清场（计分） / Boss 连击中成长 / Boss 最后一击 */
+export type PunchTryResult =
+  | { hit: false }
+  | { hit: true; kind: 'normal' }
+  | { hit: true; kind: 'bossGrow'; step: 1 | 2 | 3 | 4 }
+  | { hit: true; kind: 'bossFinal' }
+
 export type ParticlePunchHandle = {
   /** Clip space XY ∈ [-1,1], Y up（与 Three Raycaster 一致） */
-  tryPunch: (ndc: { x: number; y: number }) => boolean
+  tryPunch: (ndc: { x: number; y: number }) => PunchTryResult
   /** 将本轮输入拆成粒子：中文单字一颗，英文/数字连续为单词一颗（可多次调用叠加） */
   appendUserTextParticles: (text: string) => void
+  /** 新一局 Punch 开始时调用，清零 Boss / 连击进度 */
+  resetPunchRound: () => void
 }
 
 type Props = {
   /** 蒙层可见（仍可接收 tryPunch） */
   visible: boolean
-  /** 每次有效击打（球体开始爆散） */
+  /** 每次有效击打（普通球开始爆散） */
   onSuccessfulHit?: () => void
+  /** 第五下击破 Boss（与普通击打互斥，不计入 onSuccessfulHit） */
+  onBossDefeated?: () => void
 }
+
+/** 普通球清场次数达到此值后出现 Boss */
+const NORMAL_CLEARS_FOR_BOSS = 15
 
 const SPHERE_R = 1.12
 const COLLIDER_R = 1.34
@@ -252,16 +266,25 @@ function playPunchSfx() {
 }
 
 export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
-  function ParticlePunchOverlay({ visible, onSuccessfulHit }, ref) {
+  function ParticlePunchOverlay(
+    { visible, onSuccessfulHit, onBossDefeated },
+    ref,
+  ) {
     const mountRef = useRef<HTMLDivElement>(null)
     const visibleRef = useRef(visible)
     const onHitRef = useRef(onSuccessfulHit)
+    const onBossDefeatedRef = useRef(onBossDefeated)
     visibleRef.current = visible
     onHitRef.current = onSuccessfulHit
+    onBossDefeatedRef.current = onBossDefeated
 
     const apiRef = useRef({
-      tryPunch: (_ndc: { x: number; y: number }) => false as boolean,
+      tryPunch: (_ndc: { x: number; y: number }) =>
+        ({ hit: false } as PunchTryResult),
       appendUserTextParticles: (_text: string) => {
+        /* replaced in effect */
+      },
+      resetPunchRound: () => {
         /* replaced in effect */
       },
     })
@@ -270,6 +293,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
       tryPunch: (ndc) => apiRef.current.tryPunch(ndc),
       appendUserTextParticles: (text) =>
         apiRef.current.appendUserTextParticles(text),
+      resetPunchRound: () => apiRef.current.resetPunchRound(),
     }))
 
     useEffect(() => {
@@ -432,6 +456,12 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
       const explodeDur = 0.95
       let cooldown = 0
       const hitCooldownMs = 520
+      const bossGrowCooldownMs = 400
+
+      let normalClears = 0
+      let bossMode = false
+      let bossHits = 0
+      let bossFinalPending = false
 
       const velDot = new Float32Array(dotIdx.length * 3)
       const velSprite: THREE.Vector3[] = spriteList.map(() => new THREE.Vector3())
@@ -474,12 +504,44 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         dotsMat.opacity = 0.92
       }
 
-      function beginExplode() {
+      function enterBossMode() {
+        bossMode = true
+        bossHits = 0
+        bossFinalPending = false
+        root.scale.setScalar(1.24)
+        collider.scale.setScalar(1.14)
+      }
+
+      function exitBossMode() {
+        bossMode = false
+        bossHits = 0
+        bossFinalPending = false
+        normalClears = 0
+        root.scale.set(1, 1, 1)
+        collider.scale.set(1, 1, 1)
+      }
+
+      function resetPunchGameState() {
+        exploding = false
+        explodeT = 0
+        bossFinalPending = false
+        normalClears = 0
+        bossMode = false
+        bossHits = 0
+        root.scale.set(1, 1, 1)
+        collider.scale.set(1, 1, 1)
+        resetSphere()
+        cooldown = 0
+      }
+
+      function beginExplode(mode: 'normal' | 'bossFinal') {
         exploding = true
         explodeT = 0
+        bossFinalPending = mode === 'bossFinal'
         triggerHitFlash()
         playPunchSfx()
-        onHitRef.current?.()
+        if (mode === 'bossFinal') onBossDefeatedRef.current?.()
+        else onHitRef.current?.()
 
         for (let j = 0; j < dotIdx.length; j++) {
           const bx = baseDot[j * 3]
@@ -501,6 +563,10 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
             (b.z / len) * (2.4 + Math.random() * 2.8) * jitter,
           )
         }
+      }
+
+      apiRef.current.resetPunchRound = () => {
+        resetPunchGameState()
       }
 
       apiRef.current.appendUserTextParticles = (fragment: string) => {
@@ -542,15 +608,37 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
       }
 
       apiRef.current.tryPunch = (ndc) => {
-        if (!visibleRef.current) return false
-        if (exploding) return false
-        if (performance.now() < cooldown) return false
+        if (!visibleRef.current) return { hit: false }
+        if (exploding) return { hit: false }
+        const now = performance.now()
+        if (now < cooldown) return { hit: false }
         raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera)
         const hits = raycaster.intersectObject(collider, false)
-        if (hits.length === 0) return false
-        beginExplode()
-        cooldown = performance.now() + hitCooldownMs
-        return true
+        if (hits.length === 0) return { hit: false }
+
+        if (!bossMode) {
+          beginExplode('normal')
+          cooldown = now + hitCooldownMs
+          return { hit: true, kind: 'normal' }
+        }
+
+        if (bossHits < 4) {
+          bossHits += 1
+          triggerHitFlash()
+          playPunchSfx()
+          root.scale.multiplyScalar(1.1)
+          collider.scale.multiplyScalar(1.06)
+          cooldown = now + bossGrowCooldownMs
+          return {
+            hit: true,
+            kind: 'bossGrow',
+            step: bossHits as 1 | 2 | 3 | 4,
+          }
+        }
+
+        beginExplode('bossFinal')
+        cooldown = now + hitCooldownMs
+        return { hit: true, kind: 'bossFinal' }
       }
 
       let raf = 0
@@ -588,8 +676,18 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
           }
 
           if (explodeT >= explodeDur) {
+            const wasBossFinal = bossFinalPending
             resetSphere()
             cooldown = performance.now() + 280
+            if (wasBossFinal) {
+              bossFinalPending = false
+              exitBossMode()
+            } else if (!bossMode) {
+              normalClears += 1
+              if (normalClears >= NORMAL_CLEARS_FOR_BOSS) {
+                enterBossMode()
+              }
+            }
           }
         }
 
@@ -613,8 +711,9 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         cancelAnimationFrame(raf)
         ro.disconnect()
         flashLayer.remove()
-        apiRef.current.tryPunch = () => false
+        apiRef.current.tryPunch = () => ({ hit: false })
         apiRef.current.appendUserTextParticles = () => {}
+        apiRef.current.resetPunchRound = () => {}
         dotTexture.dispose()
         charTex.hash.dispose()
         charTex.at.dispose()

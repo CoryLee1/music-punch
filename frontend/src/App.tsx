@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { GestureStage } from './components/GestureStage'
 import { ControlPanel } from './components/ControlPanel'
@@ -121,6 +121,67 @@ function DarkBgCanvas() {
   )
 }
 
+function PunchConfettiBurst({
+  active,
+  burstKey,
+}: {
+  active: boolean
+  burstKey: number
+}) {
+  const pieces = useMemo(
+    () =>
+      Array.from({ length: 56 }, (_, i) => {
+        const seed = (i * 2654435761 + burstKey * 2246822519) >>> 0
+        const r1 = (seed % 1000) / 1000
+        const r2 = ((seed >>> 8) % 1000) / 1000
+        const r3 = ((seed >>> 16) % 1000) / 1000
+        const isRibbon = i % 3 !== 0
+        const bg = isRibbon
+          ? 'rgba(252, 248, 255, 0.9)'
+          : 'rgba(24, 22, 32, 0.82)'
+        const dx = `${(r2 - 0.5) * 280}px`
+        const rot = `${(r3 - 0.5) * 920}deg`
+        return {
+          id: `${burstKey}-${i}`,
+          left: `${r1 * 100}%`,
+          delay: `${(i % 18) * 0.026}s`,
+          duration: `${2.05 + r3 * 1.5}s`,
+          width: 2 + (i % 5),
+          height: 11 + (i % 9) * 5,
+          bg,
+          dx,
+          rot,
+        }
+      }),
+    [burstKey],
+  )
+
+  if (!active) return null
+
+  return (
+    <div className="punch-confetti-layer" aria-hidden>
+      {pieces.map((p) => (
+        <span
+          key={p.id}
+          className="punch-confetti-piece"
+          style={
+            {
+              left: p.left,
+              background: p.bg,
+              width: p.width,
+              height: p.height,
+              animationDelay: p.delay,
+              animationDuration: p.duration,
+              ['--punch-confetti-dx' as string]: p.dx,
+              ['--punch-confetti-rot' as string]: p.rot,
+            } as CSSProperties
+          }
+        />
+      ))}
+    </div>
+  )
+}
+
 export default function App() {
   /* ───── 原有 UI 状态 ───── */
   const [apiState, setApiState] = useState<'idle' | 'ok' | 'err'>('idle')
@@ -147,6 +208,9 @@ export default function App() {
   const [punchCombo, setPunchCombo] = useState(0)
   const [punchComboMax, setPunchComboMax] = useState(0)
   const [punchTimeLeft, setPunchTimeLeft] = useState(PUNCH_GAME_SEC)
+  const [punchConfettiActive, setPunchConfettiActive] = useState(false)
+  const [punchConfettiKey, setPunchConfettiKey] = useState(0)
+  const [punchBossClear, setPunchBossClear] = useState(false)
   const [textPhysicsJob, setTextPhysicsJob] = useState<TextPhysicsJob | null>(null)
 
   /* ───── refs ───── */
@@ -213,11 +277,14 @@ export default function App() {
     const tid = comboBreakTimerRef.current
     if (tid != null) window.clearTimeout(tid)
     comboBreakTimerRef.current = null
+    punchHandleRef.current?.resetPunchRound()
     setPunchScore(0)
     setPunchTimeLeft(PUNCH_GAME_SEC)
     setPunchHitTick(0)
     setPunchCombo(0)
     setPunchComboMax(0)
+    setPunchBossClear(false)
+    setPunchConfettiActive(false)
     setPunchPhase('running')
   }, [])
 
@@ -236,6 +303,20 @@ export default function App() {
       setPunchCombo(0)
     }, PUNCH_COMBO_BREAK_MS)
   }, [])
+
+  const onBossDefeated = useCallback(() => {
+    onPunchHit()
+    setPunchBossClear(true)
+    setPunchConfettiKey((k) => k + 1)
+    setPunchConfettiActive(true)
+    setPunchPhase('ended')
+  }, [onPunchHit])
+
+  useEffect(() => {
+    if (!punchConfettiActive) return
+    const t = window.setTimeout(() => setPunchConfettiActive(false), 5200)
+    return () => window.clearTimeout(t)
+  }, [punchConfettiActive, punchConfettiKey])
 
   // Punch 回合倒计时
   useEffect(() => {
@@ -257,7 +338,11 @@ export default function App() {
     comboBreakTimerRef.current = null
   }, [punchPhase])
 
-  const dismissPunchEnded = useCallback(() => setPunchPhase('idle'), [])
+  const dismissPunchEnded = useCallback(() => {
+    setPunchConfettiActive(false)
+    setPunchBossClear(false)
+    setPunchPhase('idle')
+  }, [])
 
   const onTextPhysicsComplete = useCallback(() => setTextPhysicsJob(null), [])
 
@@ -321,6 +406,9 @@ export default function App() {
     setPunchScore(0)
     setPunchCombo(0)
     setPunchComboMax(0)
+    setPunchConfettiActive(false)
+    setPunchBossClear(false)
+    punchHandleRef.current?.resetPunchRound()
   }, [])
 
   const inputDisabled = phase !== 'idle' && phase !== 'over'
@@ -338,10 +426,15 @@ export default function App() {
       )}
 
       {/* Punch 回合结束弹窗 */}
+      <PunchConfettiBurst active={punchConfettiActive} burstKey={punchConfettiKey} />
+
       {punchPhase === 'ended' && (
         <div className="punch-game-end-modal" role="dialog">
           <div className="punch-game-end-card">
             <h2 className="punch-end-heading">PUNCH ROUND · 结束</h2>
+            {punchBossClear ? (
+              <p className="punch-end-boss-tag">BOSS CLEARED · PUNCH OVER</p>
+            ) : null}
             <p className="punch-final-score">得分 · {punchScore}</p>
             <p className="punch-final-combo">最大连击 · ×{punchComboMax}</p>
             <button type="button" className="punch-end-dismiss" onClick={dismissPunchEnded}>
@@ -362,6 +455,7 @@ export default function App() {
           musicPunchGameActive={punchPhase === 'running'}
           musicPunchHandleRef={punchHandleRef}
           onMusicPunchSuccessfulHit={onPunchHit}
+          onBossDefeated={onBossDefeated}
           musicPunchHud={
             punchPhase === 'running'
               ? { timeLeft: punchTimeLeft, score: punchScore, combo: punchCombo }

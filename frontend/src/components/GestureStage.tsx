@@ -512,6 +512,8 @@ type GestureStageProps = {
   musicPunchGameActive?: boolean
   musicPunchHandleRef?: RefObject<ParticlePunchHandle | null>
   onMusicPunchSuccessfulHit?: () => void
+  /** Boss 第五击击破时由 ParticlePunch 调用（不计入普通 onMusicPunchSuccessfulHit） */
+  onBossDefeated?: () => void
   musicPunchHud?: { timeLeft: number; score: number; combo: number } | null
   /** 击打成功计数，用于分数与节拍数字弹跳 */
   musicPunchHitTick?: number
@@ -525,6 +527,7 @@ export function GestureStage({
   musicPunchGameActive = false,
   musicPunchHandleRef,
   onMusicPunchSuccessfulHit,
+  onBossDefeated,
   musicPunchHud = null,
   musicPunchHitTick = 0,
 }: GestureStageProps) {
@@ -877,7 +880,7 @@ export function GestureStage({
             musicPunchGameActiveRef.current)
 
         if (wantGesture && primary) {
-          let punchGameSphereHit = false
+          let punchGameSphereHit: boolean = false
           let hit: GestureHit | null = null
           try {
             hit = gestureDetectorRef.current.push(primary, performance.now())
@@ -900,10 +903,11 @@ export function GestureStage({
             (hit.signal === 'punch' || hit.signal === 'chop')
           ) {
             const tip = primary[INDEX]
-            punchGameSphereHit = musicPunchHandleRef.current.tryPunch({
+            const pr = musicPunchHandleRef.current.tryPunch({
               x: tip.x * 2 - 1,
               y: -(tip.y * 2 - 1),
             })
+            punchGameSphereHit = pr.hit
           }
 
           if (hit && audioRef.current && audioOn) {
@@ -1206,6 +1210,7 @@ export function GestureStage({
             ref={musicPunchHandleRef}
             visible={musicPunchGameActive}
             onSuccessfulHit={onMusicPunchSuccessfulHit}
+            onBossDefeated={onBossDefeated}
           />
         ) : null}
         {SHOW_TEXT_SEQUENCE_VISUALS &&

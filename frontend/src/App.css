@@ -1208,6 +1208,50 @@
   cursor: not-allowed;
 }
 
+.punch-confetti-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 195;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.punch-confetti-piece {
+  position: absolute;
+  top: -28px;
+  border-radius: 1px;
+  opacity: 0;
+  animation-name: punch-confetti-fall;
+  animation-timing-function: cubic-bezier(0.18, 0.92, 0.32, 1);
+  animation-fill-mode: forwards;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.08);
+}
+
+@keyframes punch-confetti-fall {
+  0% {
+    transform: translate3d(var(--punch-confetti-dx, 0px), -20px, 0) rotate(0deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--punch-confetti-dx, 0px), calc(100vh + 48px), 0)
+      rotate(var(--punch-confetti-rot, 720deg));
+    opacity: 0.22;
+  }
+}
+
+.punch-end-boss-tag {
+  margin: 0 0 14px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: rgba(255, 220, 160, 0.95);
+  text-shadow: 0 0 24px rgba(255, 140, 80, 0.35);
+}
+
 .punch-game-end-modal {
   position: fixed;
   inset: 0;
