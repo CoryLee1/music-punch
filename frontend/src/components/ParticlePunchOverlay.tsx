@@ -40,6 +40,10 @@ const NORMAL_SPHERE_COUNT = 3
 
 const SPHERE_R = 0.68
 const COLLIDER_R = 0.84
+/** 运行时分离：保证球表之间至少此间隙（世界单位），避免漂移后重叠 */
+const NORMAL_SEPARATION_SURFACE_SLACK = 0.07
+/** 初始随机布局：两球心最小水平距（XZ），留余量减轻首帧分离跳动 */
+const NORMAL_LAYOUT_MIN_XZ_PAD = 0.14
 /** 用户文字精灵高度（世界单位） */
 const USER_SPRITE_BASE_H_CJK = 0.145
 const USER_SPRITE_BASE_H_WORD = 0.114
@@ -358,6 +362,8 @@ type PunchSphereSlot = {
   exploding: boolean
   explodeT: number
   cooldownUntil: number
+  /** 每帧理想漂移位置，普通球先写入再经分离后赋给 anchor */
+  idealDrift: THREE.Vector3
 }
 
 export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
@@ -458,14 +464,21 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         return charTex.pct
       }
 
+      function minNormalPairCenterDistXZ(sa: number, sb: number) {
+        return (
+          SPHERE_R * sa +
+          SPHERE_R * sb +
+          NORMAL_SEPARATION_SURFACE_SLACK +
+          NORMAL_LAYOUT_MIN_XZ_PAD
+        )
+      }
+
       function randomNormalLayouts(): { x: number; z: number; scale: number }[] {
-        /** 两球有效边界之间的额外空隙（含粒子晕；略抑漂移靠近） */
-        const GAP = 0.58
         const S_MIN = 0.72
         const S_MAX = 1.14
-        const RANGE_X = 1.72
-        const RANGE_Z = 1.08
-        for (let attempt = 0; attempt < 360; attempt++) {
+        const RANGE_X = 1.78
+        const RANGE_Z = 1.12
+        for (let attempt = 0; attempt < 520; attempt++) {
           const pts: { x: number; z: number; scale: number }[] = []
           for (let k = 0; k < NORMAL_SPHERE_COUNT; k++) {
             pts.push({
@@ -481,9 +494,8 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
               const b = pts[j]!
               const dx = a.x - b.x
               const dz = a.z - b.z
-              const rVis =
-                SPHERE_R * 1.1 * a.scale + SPHERE_R * 1.1 * b.scale + GAP
-              if (Math.hypot(dx, dz) < rVis) ok = false
+              const need = minNormalPairCenterDistXZ(a.scale, b.scale)
+              if (Math.hypot(dx, dz) < need) ok = false
             }
           }
           if (ok) return pts
@@ -596,6 +608,7 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
           exploding: false,
           explodeT: 0,
           cooldownUntil: 0,
+          idealDrift: new THREE.Vector3(),
         }
       }
 
@@ -785,7 +798,11 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         }
       }
 
-      function applyDrift(slot: PunchSphereSlot, now: number) {
+      function computeDriftIdeal(
+        slot: PunchSphereSlot,
+        now: number,
+        out: THREE.Vector3,
+      ) {
         const ph = slot.driftPhase
         const wp = slot.wanderPhase
         const w = now * 0.00018
@@ -799,9 +816,58 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         const wz =
           Math.sin(wanderT + wp) * 0.055 +
           Math.cos(wanderT * 0.58 + ph * 1.15) * 0.024
-        slot.anchor.position.x = slot.baseX + wx + Math.sin(w + ph) * 0.012
-        slot.anchor.position.y = bob
-        slot.anchor.position.z = slot.baseZ + wz + Math.cos(w * 0.88 + ph) * 0.009
+        out.set(
+          slot.baseX + wx + Math.sin(w + ph) * 0.012,
+          bob,
+          slot.baseZ + wz + Math.cos(w * 0.88 + ph) * 0.009,
+        )
+      }
+
+      function applyDrift(slot: PunchSphereSlot, now: number) {
+        computeDriftIdeal(slot, now, slot.anchor.position)
+      }
+
+      /** 每帧把普通球心推开，保证 3D 距离 ≥ 两球视觉半径 + 间隙（消除漂移导致的穿模） */
+      function separateNormalSpheres(slots: PunchSphereSlot[]) {
+        const active = slots.filter((s) => s.anchor.visible && !s.exploding)
+        const n = active.length
+        if (n < 2) return
+        const iters = 10
+        for (let iter = 0; iter < iters; iter++) {
+          for (let i = 0; i < n; i++) {
+            for (let j = i + 1; j < n; j++) {
+              const ai = active[i]!
+              const aj = active[j]!
+              const p = ai.idealDrift
+              const q = aj.idealDrift
+              let dx = q.x - p.x
+              let dy = q.y - p.y
+              let dz = q.z - p.z
+              let dist = Math.hypot(dx, dy, dz)
+              const minD =
+                SPHERE_R * ai.visualScale +
+                SPHERE_R * aj.visualScale +
+                NORMAL_SEPARATION_SURFACE_SLACK
+              if (dist >= minD) continue
+              if (dist < 1e-6) {
+                dx = 0.001
+                dy = 0
+                dz = 0
+                dist = 0.001
+              }
+              const push = (minD - dist) * 0.5
+              dx /= dist
+              dy /= dist
+              dz /= dist
+              p.x -= dx * push
+              p.y -= dy * push
+              p.z -= dz * push
+              q.x += dx * push
+              q.y += dy * push
+              q.z += dz * push
+            }
+          }
+        }
       }
 
       apiRef.current.resetPunchRound = () => {
@@ -925,10 +991,17 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         }
       }
 
-      function tickSlot(slot: PunchSphereSlot, now: number, dt: number) {
+      function tickSlot(
+        slot: PunchSphereSlot,
+        now: number,
+        dt: number,
+        opts?: { skipDrift?: boolean },
+      ) {
         if (!slot.anchor.visible) return
         if (!slot.exploding) {
-          applyDrift(slot, now)
+          if (!opts?.skipDrift) {
+            applyDrift(slot, now)
+          }
           slot.root.rotation.y += dt * 0.52
           slot.root.rotation.x =
             Math.sin(now * 0.00031 + slot.driftPhase) * 0.09
@@ -967,7 +1040,18 @@ export const ParticlePunchOverlay = forwardRef<ParticlePunchHandle, Props>(
         last = now
 
         if (!bossMode) {
-          for (const s of normalSlots) tickSlot(s, now, dt)
+          for (const s of normalSlots) {
+            if (s.anchor.visible && !s.exploding) {
+              computeDriftIdeal(s, now, s.idealDrift)
+            }
+          }
+          separateNormalSpheres(normalSlots)
+          for (const s of normalSlots) {
+            if (s.anchor.visible && !s.exploding) {
+              s.anchor.position.copy(s.idealDrift)
+            }
+          }
+          for (const s of normalSlots) tickSlot(s, now, dt, { skipDrift: true })
         } else {
           tickSlot(bossSlot, now, dt)
         }
