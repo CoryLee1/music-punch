@@ -14,7 +14,6 @@ import {
   type GestureHit,
 } from '../lib/handGestures'
 import {
-  PLAYBACK_GAIN,
   SampleLoopController,
   resumeAudioContext,
 } from '../lib/samplePlayer'
@@ -47,8 +46,6 @@ const W = 640
 const H = 480
 /** 摄像头/检测用理想分辨率（与画布逻辑尺寸无关） */
 const INDEX = 8
-const THUMB_TIP = 4
-const INDEX_TIP = 8
 /** 非击打玩法时：出拳/切手落在主拍 ±该秒内才给背景升半音 */
 const BEAT_PITCH_BUMP_WINDOW_SEC = 0.12
 
@@ -129,23 +126,6 @@ const PAL = {
   ink: [0, 0, 0] as const,
   /** 装饰线条 / HUD 文字（统一蓝色） */
   deco: [0, 189, 214] as const,
-  /** 装饰次级（蓝色降透明度用） */
-  decoFaint: [0, 150, 175] as const,
-  /** 飘字碎片（淡蓝） */
-  ghost: [0, 170, 200] as const,
-}
-
-function nf(n: number, _w: number, dec: number) {
-  if (dec <= 0) return String(Math.round(n))
-  return n.toFixed(dec)
-}
-
-function fract(x: number) {
-  return x - Math.floor(x)
-}
-
-function pseudoNoise(i: number, j: number, t: number) {
-  return fract(Math.sin(i * 12.9898 + j * 78.233 + t * 2.399) * 43758.5453)
 }
 
 type LM = { x: number; y: number }
@@ -163,106 +143,6 @@ function mirrorLandmarksFromCamera(
       x: 1 - p.x,
     })),
   )
-}
-
-function drawGlitchField(
-  ctx: CanvasRenderingContext2D,
-  frame: number,
-  w: number,
-  h: number,
-): void {
-  const glyphs = '01/\\[]{}⟨⟩::xx⊹⌁∴Δ'
-  ctx.textBaseline = 'alphabetic'
-  ctx.font = '9px "IBM Plex Mono", monospace'
-  const t = frame * 0.012
-  const cx = w / 2
-  const cy = h / 2
-  const scale = Math.min(w, h)
-  for (let i = 0; i < 95; i++) {
-    const nx = pseudoNoise(i * 0.17 + t, i * 0.03, 0)
-    const ny = pseudoNoise(i * 0.19 + 40, i * 0.07 + t, 1)
-    const dx = (nx - 0.5) * 1.15
-    const dy = (ny - 0.5) * 0.95
-    const x = cx + dx * scale * 0.62
-    const y = cy + dy * scale * 0.52
-    ctx.fillStyle = `rgba(${PAL.ghost[0]}, ${PAL.ghost[1]}, ${PAL.ghost[2]}, ${0.05 + (i % 7) * 0.012})`
-    ctx.fillText(glyphs.charAt(i % glyphs.length), x, y)
-  }
-}
-
-function drawSystemHeader(ctx: CanvasRenderingContext2D): void {
-  ctx.font = '11px "IBM Plex Mono", monospace'
-  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.45)`
-  let y = 22
-  ctx.fillText('// SYSTEM: MATRIX_VOID · REACT_VITE', 14, y)
-  ctx.fillText('// RIPPLE: SAMPLE_RATE_BINDING · TONE_PLAYER', 14, y + 14)
-  ctx.fillText('// VISUAL: THIN_MONO · BW_REFERENCE', 14, y + 28)
-}
-
-function drawIdleGeometry(
-  ctx: CanvasRenderingContext2D,
-  frame: number,
-  w: number,
-  h: number,
-): void {
-  const cx = w / 2
-  const cy = h / 2
-  const baseR = (88 * Math.min(w, h)) / 480
-  const r = baseR + Math.sin(frame * 0.02) * 4
-  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.42)`
-  ctx.lineWidth = 0.6
-  ctx.setLineDash([3, 7])
-  ctx.beginPath()
-  ctx.ellipse(cx, cy, r, r, 0, 0, Math.PI * 2)
-  ctx.stroke()
-  ctx.setLineDash([])
-  for (let a = 0; a < Math.PI * 2; a += Math.PI / 3) {
-    ctx.beginPath()
-    ctx.moveTo(cx, cy)
-    ctx.lineTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6))
-    ctx.stroke()
-  }
-}
-
-function drawStartPrompt(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-): void {
-  const cx = w / 2
-  const cy = h / 2
-  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.7)`
-  ctx.lineWidth = 0.75
-  ctx.strokeRect(cx - 248, cy - 42, 496, 84)
-  ctx.fillStyle = `rgb(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]})`
-  ctx.font = '13px "IBM Plex Mono", monospace'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('[ BG_LOOP · AUTO_START · TAP_PREVIEW_IF_SILENT ]', cx, cy - 14)
-  ctx.font = '12px "IBM Plex Mono", monospace'
-  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.72)`
-  ctx.fillText(
-    '背景循环自动尝试播放 · 静音用 // STOP_AUDIO · 停止后可点预览区恢复',
-    cx,
-    cy + 14,
-  )
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'alphabetic'
-}
-
-/** 摄像头尚未出帧时提示（RAF 也会在未就绪时 paint，避免整区空白像「没开摄像头」） */
-function drawCameraWaiting(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  ctx.font = '12px "IBM Plex Mono", monospace'
-  ctx.textAlign = 'center'
-  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.55)`
-  ctx.fillText('// CAMERA · 等待摄像头画面 / 请确认浏览器已授权', w / 2, h / 2 - 8)
-  ctx.font = '10px "IBM Plex Mono", monospace'
-  ctx.fillText(
-    '// 若一直无画面：检查地址栏摄像头权限 · 须 localhost 或 HTTPS',
-    w / 2,
-    h / 2 + 14,
-  )
-  ctx.textAlign = 'left'
 }
 
 function drawHandConnections(
@@ -299,82 +179,6 @@ function drawHandThin(
     ctx.ellipse(x, y, 3.5, 3.5, 0, 0, Math.PI * 2)
     ctx.stroke()
   }
-}
-
-/** 与 sketch.js drawDataHUD 布局一致 */
-function drawTraceHUD(
-  ctx: CanvasRenderingContext2D,
-  pinchCx: number,
-  pinchCy: number,
-  radiusPx: number,
-  playbackRate: number,
-  volume: number,
-  w: number,
-  h: number,
-): void {
-  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.4)`
-  ctx.lineWidth = 0.5
-  ctx.beginPath()
-  ctx.moveTo(w / 2, h / 2)
-  ctx.lineTo(pinchCx, pinchCy)
-  ctx.stroke()
-
-  ctx.font = '10px "IBM Plex Mono", monospace'
-  ctx.fillStyle = `rgb(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]})`
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'alphabetic'
-  ctx.fillText(
-    `POS X: ${nf(pinchCx, 1, 0)}  Y: ${nf(pinchCy, 1, 0)}`,
-    pinchCx + 12,
-    pinchCy - 6,
-  )
-  ctx.fillText(`[ PINCH_R: ${nf(radiusPx, 1, 1)} ]`, pinchCx + 12, pinchCy + 8)
-  ctx.fillText(
-    `PITCH // VOL  ${nf(playbackRate, 1, 2)}  ·  ${nf(volume, 1, 2)}`,
-    14,
-    h - 38,
-  )
-
-  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.45)`
-  ctx.lineWidth = 0.55
-  ctx.strokeRect(10, 52, 280, 74)
-
-  ctx.fillStyle = `rgb(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]})`
-  ctx.fillText('// TRACE · GESTURE_SAMPLE_CONTROLLER', 18, 70)
-  ctx.fillText(`RADIUS        ${nf(radiusPx, 1, 1)} px`, 18, 88)
-  ctx.fillText(
-    `PITCH_FACTOR ${nf(playbackRate, 1, 2)}  (½ ST per hit)`,
-    18,
-    104,
-  )
-  ctx.fillText(`AMPLITUDE     ${nf(volume, 1, 2)}`, 18, 120)
-}
-
-function drawGestureCue(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  hit: { labelZh: string; labelEn: string },
-  ageMs: number,
-): void {
-  const fade = Math.max(0, 1 - ageMs / 4200)
-  if (fade <= 0) return
-  ctx.save()
-  ctx.font = '13px "IBM Plex Mono", monospace'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'top'
-  const y = 96
-  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, ${0.3 + 0.55 * fade})`
-  ctx.fillText(`// GESTURE · ${hit.labelZh}  /  ${hit.labelEn}`, w / 2, y)
-  ctx.lineWidth = 0.6
-  ctx.strokeStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, ${0.3 + 0.45 * fade})`
-  ctx.strokeRect(w / 2 - 158, y - 6, 316, 26)
-  ctx.restore()
-}
-
-function drawSignalNull(ctx: CanvasRenderingContext2D, h: number): void {
-  ctx.font = '10px "IBM Plex Mono", monospace'
-  ctx.fillStyle = `rgba(${PAL.deco[0]}, ${PAL.deco[1]}, ${PAL.deco[2]}, 0.5)`
-  ctx.fillText('// SIGNAL: NULL · NO_HAND', 14, h - 18)
 }
 
 /**
@@ -793,13 +597,7 @@ export function GestureStage({
       ctx.fillStyle = `rgb(${PAL.bg[0]}, ${PAL.bg[1]}, ${PAL.bg[2]})`
       ctx.fillRect(0, 0, w, h)
 
-      const fr = frameRef.current++
-      drawGlitchField(ctx, fr, w, h)
-      drawIdleGeometry(ctx, fr, w, h)
-      drawSystemHeader(ctx)
-      if (!audioOn) drawStartPrompt(ctx, w, h)
-
-      if (!result) drawCameraWaiting(ctx, w, h)
+      frameRef.current++
 
       const hands = mirrorLandmarksFromCamera(result?.landmarks)
 
@@ -822,8 +620,6 @@ export function GestureStage({
         }
 
         const primary = pickPrimaryHand(hands)
-        const thumb = primary?.[THUMB_TIP]
-        const indexFinger = primary?.[INDEX_TIP]
 
         const wantGesture =
           !!primary &&
@@ -893,39 +689,8 @@ export function GestureStage({
           gestureDetectorRef.current.reset()
         }
 
-        if (thumb && indexFinger) {
-          const pinchCx = ((thumb.x + indexFinger.x) / 2) * w
-          const pinchCy = ((thumb.y + indexFinger.y) / 2) * h
-          const radiusPx = Math.hypot(
-            (thumb.x - indexFinger.x) * w,
-            (thumb.y - indexFinger.y) * h,
-          )
-          const ctrl = audioRef.current
-          const playbackRate =
-            audioOn && ctrl ? ctrl.getUiPlaybackRate() : 1
-          const volume =
-            audioOn && ctrl?.isLoopPlaying() ? PLAYBACK_GAIN : 0
-          drawTraceHUD(
-            ctx,
-            pinchCx,
-            pinchCy,
-            radiusPx,
-            playbackRate,
-            volume,
-            w,
-            h,
-          )
-        }
       } else {
         gestureDetectorRef.current.reset()
-        drawSignalNull(ctx, h)
-      }
-
-      /* 指尖拖尾绘制已关闭 */
-
-      const cue = lastGestureCueRef.current
-      if (cue) {
-        drawGestureCue(ctx, w, cue, performance.now() - cue.t)
       }
 
       const ac = audioRef.current
