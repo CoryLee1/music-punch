@@ -128,11 +128,15 @@ export default function App() {
   const [emotion, setEmotion] = useState('')
   const [elapsed, setElapsed] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
-  const [cameraReady, setCameraReady] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [audioStarted, setAudioStarted] = useState(false)
   const [clipLabel, setClipLabel] = useState('内置 · sample.wav')
   const [gestureBanner, setGestureBanner] = useState<GestureHit | null>(null)
+
+  /* ───── 摄像头（右侧面板预览用） ───── */
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const [cameraReady, setCameraReady] = useState(false)
 
   /* ───── Punch 游戏状态 ───── */
   const punchHandleRef = useRef<ParticlePunchHandle>(null)
@@ -146,9 +150,7 @@ export default function App() {
   const [textPhysicsJob, setTextPhysicsJob] = useState<TextPhysicsJob | null>(null)
 
   /* ───── refs ───── */
-  const videoRef = useRef<HTMLVideoElement | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
 
   /* ───── API 健康检查 ───── */
   useEffect(() => {
@@ -166,29 +168,34 @@ export default function App() {
     return () => { cancelled = true }
   }, [])
 
-  /* ───── 初始化摄像头（供右侧面板用） ───── */
+  /* ───── 右侧面板摄像头初始化 ───── */
   useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
     let cancelled = false
-    const initCamera = async () => {
+    void (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480, facingMode: 'user' },
+          video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: { ideal: 'user' } },
           audio: false,
         })
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return }
         streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          try { await videoRef.current.play() } catch { /* benign */ }
-          setCameraReady(true)
-        }
-      } catch (e) {
-        if (!cancelled) setErrors((prev) => [...prev.slice(-4), `摄像头: ${e instanceof Error ? e.message : String(e)}`])
+        video.srcObject = stream
+        await video.play()
+        if (!cancelled) setCameraReady(true)
+      } catch {
+        /* 摄像头不可用时静默失败 */
       }
+    })()
+    return () => {
+      cancelled = true
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+      video.pause()
+      video.srcObject = null
+      setCameraReady(false)
     }
-    void initCamera()
-    return () => { cancelled = true; streamRef.current?.getTracks().forEach((t) => t.stop()) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /* ───── 正计时 ───── */
@@ -360,7 +367,6 @@ export default function App() {
         <GestureStage
           textPhysicsJob={textPhysicsJob}
           onTextPhysicsComplete={onTextPhysicsComplete}
-          onMidSequencePhysicsText={submitPhysicsText}
           onEmotionScanComplete={onEmotionScanComplete}
           onAudioPlaybackStarted={onAudioPlaybackStarted}
           musicPunchGameActive={punchPhase === 'running'}
@@ -383,12 +389,12 @@ export default function App() {
           onTogglePause={handleTogglePause}
           onStop={handleStop}
           onReset={handleReset}
-          videoRef={videoRef}
-          cameraReady={cameraReady}
           apiState={apiState}
           gestureBanner={gestureBanner}
           clipLabel={clipLabel}
           audioStarted={audioStarted}
+          videoRef={videoRef}
+          cameraReady={cameraReady}
         />
       </div>
 

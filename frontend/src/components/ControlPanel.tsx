@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, type RefObject } from 'react'
 import * as Tone from 'tone'
 import type { GestureHit } from '../lib/handGestures'
 
@@ -351,187 +351,100 @@ interface ControlPanelProps {
   onTogglePause: () => void
   onStop: () => void
   onReset: () => void
-  videoRef: React.RefObject<HTMLVideoElement | null>
-  cameraReady: boolean
   apiState: 'idle' | 'ok' | 'err'
   /** 手势/音频相关 */
   gestureBanner?: GestureHit | null
   clipLabel?: string
   audioStarted?: boolean
+  /** 摄像头预览 */
+  videoRef?: RefObject<HTMLVideoElement | null>
+  cameraReady?: boolean
 }
 
-/* ───── 摄像头 HUD Canvas 叠加 ───── */
-function useCameraHUD(cameraReady: boolean) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const rafRef = useRef<number>(0)
+
+/* ───── 摄像头 HUD ───── */
+function useCameraHUD(
+  videoRef: RefObject<HTMLVideoElement | null> | undefined,
+  cameraReady: boolean,
+) {
+  const hudCanvasRef = useRef<HTMLCanvasElement>(null)
+  const rafRef = useRef(0)
   const frameRef = useRef(0)
 
   useEffect(() => {
     if (!cameraReady) return
-
-    const BRAND = [0, 189, 214] as const // 品牌色 #00bdd6
-    const BRAND_DIM = [0, 150, 170] as const
-
     const draw = () => {
-      const canvas = canvasRef.current
-      if (!canvas) return
+      const canvas = hudCanvasRef.current
+      const video = videoRef?.current
+      if (!canvas || !video || video.videoWidth === 0) {
+        rafRef.current = requestAnimationFrame(draw)
+        return
+      }
       const ctx = canvas.getContext('2d')
-      if (!ctx) return
+      if (!ctx) { rafRef.current = requestAnimationFrame(draw); return }
 
       const dpr = window.devicePixelRatio || 1
       const rect = canvas.getBoundingClientRect()
+      canvas.width = rect.width * dpr
+      canvas.height = rect.height * dpr
+      ctx.scale(dpr, dpr)
       const w = rect.width
       const h = rect.height
-      canvas.width = w * dpr
-      canvas.height = h * dpr
-      ctx.scale(dpr, dpr)
       ctx.clearRect(0, 0, w, h)
 
       const fr = frameRef.current++
-      const g = `${BRAND[0]}, ${BRAND[1]}, ${BRAND[2]}`
-      const gd = `${BRAND_DIM[0]}, ${BRAND_DIM[1]}, ${BRAND_DIM[2]}`
-
-      // ─── 1. 扫描线叠加 ───
-      for (let y = 0; y < h; y += 2) {
-        ctx.fillStyle = `rgba(0, 0, 0, 0.08)`
-        ctx.fillRect(0, y, w, 1)
-      }
-
-      // ─── 2. 移动扫描光带 ───
-      const scanY = (fr * 1.2) % (h + 40) - 20
-      const scanGrad = ctx.createLinearGradient(0, scanY - 20, 0, scanY + 20)
-      scanGrad.addColorStop(0, `rgba(${g}, 0)`)
-      scanGrad.addColorStop(0.5, `rgba(${g}, 0.06)`)
-      scanGrad.addColorStop(1, `rgba(${g}, 0)`)
-      ctx.fillStyle = scanGrad
-      ctx.fillRect(0, scanY - 20, w, 40)
-
-      // ─── 3. 四角瞄准框 ───
-      const cornerLen = 18
-      const cornerOff = 8
-      ctx.strokeStyle = `rgba(${g}, 0.6)`
-      ctx.lineWidth = 1.5
-
+      // 半透明 HUD 叠加
+      ctx.strokeStyle = 'rgba(0, 160, 184, 0.15)'
+      ctx.lineWidth = 0.5
+      // 角标
+      const corner = 10
       // 左上
       ctx.beginPath()
-      ctx.moveTo(cornerOff, cornerOff + cornerLen)
-      ctx.lineTo(cornerOff, cornerOff)
-      ctx.lineTo(cornerOff + cornerLen, cornerOff)
+      ctx.moveTo(4, 4 + corner); ctx.lineTo(4, 4); ctx.lineTo(4 + corner, 4)
       ctx.stroke()
       // 右上
       ctx.beginPath()
-      ctx.moveTo(w - cornerOff - cornerLen, cornerOff)
-      ctx.lineTo(w - cornerOff, cornerOff)
-      ctx.lineTo(w - cornerOff, cornerOff + cornerLen)
+      ctx.moveTo(w - 4 - corner, 4); ctx.lineTo(w - 4, 4); ctx.lineTo(w - 4, 4 + corner)
       ctx.stroke()
       // 左下
       ctx.beginPath()
-      ctx.moveTo(cornerOff, h - cornerOff - cornerLen)
-      ctx.lineTo(cornerOff, h - cornerOff)
-      ctx.lineTo(cornerOff + cornerLen, h - cornerOff)
+      ctx.moveTo(4, h - 4 - corner); ctx.lineTo(4, h - 4); ctx.lineTo(4 + corner, h - 4)
       ctx.stroke()
       // 右下
       ctx.beginPath()
-      ctx.moveTo(w - cornerOff - cornerLen, h - cornerOff)
-      ctx.lineTo(w - cornerOff, h - cornerOff)
-      ctx.lineTo(w - cornerOff, h - cornerOff - cornerLen)
+      ctx.moveTo(w - 4 - corner, h - 4); ctx.lineTo(w - 4, h - 4); ctx.lineTo(w - 4, h - 4 - corner)
       ctx.stroke()
 
-      // ─── 4. 中心十字准星 ───
-      const cx = w / 2
-      const cy = h / 2
-      const crossR = 14
-      const crossGap = 4
-      ctx.strokeStyle = `rgba(${g}, 0.3)`
-      ctx.lineWidth = 0.8
-      // 上
-      ctx.beginPath()
-      ctx.moveTo(cx, cy - crossR)
-      ctx.lineTo(cx, cy - crossGap)
-      ctx.stroke()
-      // 下
-      ctx.beginPath()
-      ctx.moveTo(cx, cy + crossGap)
-      ctx.lineTo(cx, cy + crossR)
-      ctx.stroke()
-      // 左
-      ctx.beginPath()
-      ctx.moveTo(cx - crossR, cy)
-      ctx.lineTo(cx - crossGap, cy)
-      ctx.stroke()
-      // 右
-      ctx.beginPath()
-      ctx.moveTo(cx + crossGap, cy)
-      ctx.lineTo(cx + crossR, cy)
-      ctx.stroke()
+      // 中心十字
+      const cx = w / 2, cy = h / 2
+      ctx.strokeStyle = 'rgba(0, 160, 184, 0.12)'
+      ctx.lineWidth = 0.4
+      ctx.setLineDash([3, 5])
+      ctx.beginPath(); ctx.moveTo(cx - 14, cy); ctx.lineTo(cx + 14, cy); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(cx, cy - 14); ctx.lineTo(cx, cy + 14); ctx.stroke()
+      ctx.setLineDash([])
 
-      // ─── 5. 顶部标签 ───
-      ctx.font = '9px "Space Mono", "IBM Plex Mono", monospace'
-      ctx.fillStyle = `rgba(${g}, 0.7)`
+      // 标签
+      ctx.font = '7px "IBM Plex Mono", monospace'
+      ctx.fillStyle = 'rgba(0, 160, 184, 0.35)'
       ctx.textBaseline = 'top'
-      ctx.fillText('■ BIOMETRIC_SYS', cornerOff + 2, cornerOff + 6)
+      ctx.fillText('CAM', 8, 6)
 
-      // 闪烁的 REC 指示灯
-      const blinkOn = Math.floor(fr / 30) % 2 === 0
-      if (blinkOn) {
-        ctx.fillStyle = `rgba(${g}, 0.8)`
+      // 闪烁录制指示
+      if (Math.floor(fr / 30) % 2 === 0) {
+        ctx.fillStyle = 'rgba(255, 80, 60, 0.5)'
         ctx.beginPath()
-        ctx.arc(w - cornerOff - 4, cornerOff + 11, 3, 0, Math.PI * 2)
+        ctx.arc(w - 10, 10, 2.5, 0, Math.PI * 2)
         ctx.fill()
-        ctx.fillStyle = `rgba(${g}, 0.6)`
-        ctx.textAlign = 'right'
-        ctx.fillText('REC', w - cornerOff - 12, cornerOff + 6)
-        ctx.textAlign = 'left'
       }
 
-      // ─── 6. 底部状态条 ───
-      // 底部半透明条
-      ctx.fillStyle = `rgba(0, 0, 0, 0.45)`
-      ctx.fillRect(0, h - 28, w, 28)
-      // 上分隔线
-      ctx.strokeStyle = `rgba(${g}, 0.25)`
-      ctx.lineWidth = 0.5
-      ctx.beginPath()
-      ctx.moveTo(0, h - 28)
-      ctx.lineTo(w, h - 28)
-      ctx.stroke()
-
-      ctx.font = '8px "Space Mono", "IBM Plex Mono", monospace'
-      ctx.fillStyle = `rgba(${g}, 0.55)`
-      ctx.textBaseline = 'middle'
-      ctx.fillText('MULTIMODAL TRACKING ACTIVE', 10, h - 14)
-
-      ctx.textAlign = 'right'
-      ctx.fillStyle = `rgba(${gd}, 0.45)`
-      ctx.fillText('DELAY', w - 10, h - 14)
-      ctx.textAlign = 'left'
-
-      // ─── 7. 细微网格 ───
-      ctx.strokeStyle = `rgba(${g}, 0.04)`
-      ctx.lineWidth = 0.5
-      const gridSize = 24
-      for (let x = gridSize; x < w; x += gridSize) {
-        ctx.beginPath()
-        ctx.moveTo(x, 0)
-        ctx.lineTo(x, h - 28)
-        ctx.stroke()
-      }
-      for (let y = gridSize; y < h - 28; y += gridSize) {
-        ctx.beginPath()
-        ctx.moveTo(0, y)
-        ctx.lineTo(w, y)
-        ctx.stroke()
-      }
-
-      ctx.textBaseline = 'alphabetic'
       rafRef.current = requestAnimationFrame(draw)
     }
-
     rafRef.current = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [cameraReady])
+  }, [cameraReady, videoRef])
 
-  return canvasRef
+  return hudCanvasRef
 }
 
 /* ───── 音频波形可视化 ───── */
@@ -644,15 +557,15 @@ export function ControlPanel({
   onTogglePause,
   onStop,
   onReset,
-  videoRef,
-  cameraReady,
   apiState,
   gestureBanner,
   clipLabel = '内置 · sample.wav',
   audioStarted = false,
+  videoRef,
+  cameraReady = false,
 }: ControlPanelProps) {
   const waveCanvasRef = useWaveformVisualizer(phase)
-  const hudCanvasRef = useCameraHUD(cameraReady)
+  const hudCanvasRef = useCameraHUD(videoRef, cameraReady)
   const animPaused = phase === 'active' || phase === 'ending'
   const chopCanvasRef = useStickFigureAnimation(CHOP_FRAMES, CHOP_TIMING, 'triangle', animPaused, 2)
   const boxerCanvasRef = useStickFigureAnimation(BOXER_FRAMES, BOXER_TIMING, 'circle', animPaused, 3)
@@ -677,14 +590,20 @@ export function ControlPanel({
           </span>
         </div>
 
-        {/* 摄像头预览 + HUD */}
+        {/* 摄像头预览 */}
         <div className="panel-camera">
           <video
             ref={videoRef}
             autoPlay
             playsInline
             muted
-            style={{ visibility: cameraReady ? 'visible' : 'hidden' }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              transform: 'scaleX(-1)',
+              visibility: cameraReady ? 'visible' : 'hidden',
+            }}
           />
           <canvas ref={hudCanvasRef} className="camera-hud-canvas" />
           {!cameraReady && (

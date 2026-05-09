@@ -4,10 +4,10 @@ import {
   useEffect,
   useRef,
   useState,
-  type KeyboardEvent,
   type MutableRefObject,
   type RefObject,
 } from 'react'
+import { createRobustHandLandmarker } from '../lib/mediapipeHandLandmarker'
 import {
   GestureEventDetector,
   pickPrimaryHand,
@@ -23,7 +23,6 @@ import {
   type HandProbePoint,
 } from '../lib/runTextMatter'
 import { TechnoScanOverlay } from './TechnoScanOverlay'
-import { createRobustHandLandmarker } from '../lib/mediapipeHandLandmarker'
 import {
   ParticlePunchOverlay,
   type ParticlePunchHandle,
@@ -136,14 +135,14 @@ const HAND_CONNECTIONS: [number, number][] = [
 ]
 
 const PAL = {
-  /** 近似纯黑底 */
-  bg: [6, 6, 8] as const,
-  /** 主细线 / 文字 */
-  ink: [248, 248, 250] as const,
+  /** 白色画板底 */
+  bg: [255, 255, 255] as const,
+  /** 主细线 / 文字（深灰） */
+  ink: [30, 30, 34] as const,
   /** 次级注释 */
-  inkFaint: [130, 130, 135] as const,
-  /** 飘字碎片 */
-  ghost: [255, 255, 255] as const,
+  inkFaint: [120, 120, 125] as const,
+  /** 飘字碎片（浅灰） */
+  ghost: [160, 160, 165] as const,
 }
 
 function nf(n: number, _w: number, dec: number) {
@@ -295,7 +294,7 @@ function drawHandConnections(
   }
 }
 
-/** 五指指尖白色运动拖尾（宽光晕 + 亮芯） */
+/** 五指指尖运动拖尾（深色，配合白色画板） */
 function drawFingerTipGlowTrail(
   ctx: CanvasRenderingContext2D,
   trail: TipGlowPoint[],
@@ -320,13 +319,12 @@ function drawFingerTipGlowTrail(
         const p1 = trail[i]!
         const sa = segAlpha(p0.t, p1.t)
         if (sa < 0.02) continue
-        /** 尾巴根（较旧段 sa 小）略加粗，视觉上更「粗根细梢」 */
         const rootWide = 1 - sa
         if (pass === 0) {
-          ctx.strokeStyle = `rgba(255, 255, 255, ${sa * 0.22})`
+          ctx.strokeStyle = `rgba(30, 30, 34, ${sa * 0.15})`
           ctx.lineWidth = 7 + sa * 6 + rootWide * 11
         } else {
-          ctx.strokeStyle = `rgba(255, 255, 255, ${sa * 0.92})`
+          ctx.strokeStyle = `rgba(30, 30, 34, ${sa * 0.7})`
           ctx.lineWidth = 1 + sa * 1.65 + rootWide * 2.4
         }
         ctx.beginPath()
@@ -341,9 +339,9 @@ function drawFingerTipGlowTrail(
   const headAge = Math.max(0, 1 - (nowMs - head.t) / maxAge)
   if (headAge > 0.06) {
     const g = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 14)
-    g.addColorStop(0, `rgba(255, 255, 255, ${headAge * 0.5})`)
-    g.addColorStop(0.45, `rgba(255, 255, 255, ${headAge * 0.12})`)
-    g.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    g.addColorStop(0, `rgba(30, 30, 34, ${headAge * 0.35})`)
+    g.addColorStop(0.45, `rgba(30, 30, 34, ${headAge * 0.08})`)
+    g.addColorStop(1, 'rgba(30, 30, 34, 0)')
     ctx.fillStyle = g
     ctx.beginPath()
     ctx.arc(head.x, head.y, 14, 0, Math.PI * 2)
@@ -488,10 +486,10 @@ function drawGestureCue(
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   const y = 96
-  ctx.fillStyle = `rgba(248, 248, 250, ${0.15 + 0.55 * fade})`
+  ctx.fillStyle = `rgba(30, 30, 34, ${0.15 + 0.55 * fade})`
   ctx.fillText(`// GESTURE · ${hit.labelZh}  /  ${hit.labelEn}`, w / 2, y)
   ctx.lineWidth = 0.6
-  ctx.strokeStyle = `rgba(248, 248, 250, ${0.25 + 0.45 * fade})`
+  ctx.strokeStyle = `rgba(30, 30, 34, ${0.25 + 0.45 * fade})`
   ctx.strokeRect(w / 2 - 158, y - 6, 316, 26)
   ctx.restore()
 }
@@ -507,8 +505,6 @@ export type TextPhysicsJob = { id: number; text: string }
 type GestureStageProps = {
   textPhysicsJob?: TextPhysicsJob | null
   onTextPhysicsComplete?: () => void
-  /** 扫描/落体进行中仍可调用，会派发新任务并重启序列 */
-  onMidSequencePhysicsText?: (text: string) => void
   /** TECHNO_SCAN 结束、进入 Matter 瞬间 — 用于启动 60s 音乐击打回合 */
   onEmotionScanComplete?: () => void
   /** 主循环音频首次成功启动时（自动尝试、摄像头就绪或用户点预览区恢复等） */
@@ -524,7 +520,6 @@ type GestureStageProps = {
 export function GestureStage({
   textPhysicsJob = null,
   onTextPhysicsComplete,
-  onMidSequencePhysicsText,
   onEmotionScanComplete,
   onAudioPlaybackStarted,
   musicPunchGameActive = false,
@@ -537,12 +532,12 @@ export function GestureStage({
   const punchViewportFxTimerRef = useRef<ReturnType<
     typeof window.setTimeout
   > | null>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const matterCanvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const landmarkerRef = useRef<HandLandmarker | null>(null)
   const audioRef = useRef<SampleLoopController | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const landmarkerRef = useRef<HandLandmarker | null>(null)
   const beatGestureHintRef = useRef<BeatGestureHintHandle | null>(null)
   const punchHudRef = useRef<HTMLDivElement>(null)
   const canvasHostRef = useRef<HTMLDivElement>(null)
@@ -576,7 +571,6 @@ export function GestureStage({
   const [sequencePhase, setSequencePhase] = useState<
     'idle' | 'scan' | 'matter'
   >('idle')
-  const [midSequenceDraft, setMidSequenceDraft] = useState('')
   sequencePhaseRef.current = sequencePhase
   const audioStartedRef = useRef(false)
   useEffect(() => {
@@ -719,6 +713,7 @@ export function GestureStage({
     }
   }, [tryStartAudio])
 
+  /* ── HandLandmarker 初始化 ── */
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -727,9 +722,10 @@ export function GestureStage({
         if (!cancelled) landmarkerRef.current = lm
         else lm.close()
       } catch (e) {
-        if (!cancelled) {
-          setModelError(e instanceof Error ? e.message : String(e))
-        }
+        if (!cancelled)
+          setModelError(
+            e instanceof Error ? e.message : String(e),
+          )
       }
     })()
     return () => {
@@ -739,19 +735,12 @@ export function GestureStage({
     }
   }, [])
 
+  /* ── 隐藏摄像头 — 仅用于手部检测，不在画布上绘制视频画面 ── */
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
     let stream: MediaStream | null = null
     let cancelled = false
-
-    const isBenignPlayInterrupt = (e: unknown) => {
-      if (e instanceof DOMException && e.name === 'AbortError') return true
-      const msg =
-        e instanceof Error ? e.message : typeof e === 'string' ? e : ''
-      return /interrupted|AbortError|new load request/i.test(msg)
-    }
-
     void (async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -770,18 +759,15 @@ export function GestureStage({
         await video.play()
         await resumeAudioContext()
         if (!cancelled && !userStoppedBgRef.current) void tryStartAudio()
-      } catch (e) {
-        if (cancelled || isBenignPlayInterrupt(e)) return
-        setModelError(e instanceof Error ? e.message : String(e))
+      } catch {
+        /* 摄像头不可用时静默失败 — 仅影响手部检测 */
       }
     })()
-
     return () => {
       cancelled = true
       stream?.getTracks().forEach((t) => t.stop())
       video.pause()
       video.srcObject = null
-      video.removeAttribute('src')
     }
   }, [tryStartAudio])
 
@@ -836,8 +822,7 @@ export function GestureStage({
   const paint = useCallback(
     (result: HandLandmarkerResult | null, audioOn: boolean) => {
       const c = canvasRef.current
-      const video = videoRef.current
-      if (!c || !video) return
+      if (!c) return
       const ctx = c.getContext('2d')
       if (!ctx) return
       const w = W
@@ -845,32 +830,13 @@ export function GestureStage({
       c.width = w
       c.height = h
 
+      /* 白色画板底 */
       ctx.fillStyle = `rgb(${PAL.bg[0]}, ${PAL.bg[1]}, ${PAL.bg[2]})`
       ctx.fillRect(0, 0, w, h)
 
-      const videoReady =
-        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-        video.videoWidth > 0
-
-      if (videoReady) {
-        ctx.filter = 'grayscale(1) contrast(1.08) brightness(0.88)'
-        ctx.save()
-        ctx.translate(w, 0)
-        ctx.scale(-1, 1)
-        ctx.drawImage(video, 0, 0, w, h)
-        ctx.restore()
-        ctx.filter = 'none'
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.22)'
-        ctx.fillRect(0, 0, w, h)
-      } else {
-        drawCameraWaiting(ctx, w, h)
-      }
-
       const fr = frameRef.current++
-      if (videoReady) {
-        drawGlitchField(ctx, fr, w, h)
-        drawIdleGeometry(ctx, fr, w, h)
-      }
+      drawGlitchField(ctx, fr, w, h)
+      drawIdleGeometry(ctx, fr, w, h)
       drawSystemHeader(ctx)
       if (!audioOn) drawStartPrompt(ctx, w, h)
 
@@ -1085,20 +1051,15 @@ export function GestureStage({
     [],
   )
 
+  /* 渲染循环 — 从隐藏 video 中检测手部，结果传入 paint */
   useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
-
     const loop = () => {
       const v = videoRef.current
       const marker = landmarkerRef.current
-      if (!v) {
-        rafRef.current = requestAnimationFrame(loop)
-        return
-      }
       let result: HandLandmarkerResult | null = null
       if (
         marker &&
+        v &&
         v.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
         v.videoWidth > 0
       ) {
@@ -1146,20 +1107,6 @@ export function GestureStage({
     void tryStartAudio()
   }
 
-  const submitMidSequenceText = () => {
-    const t = midSequenceDraft.trim()
-    if (!t || !onMidSequencePhysicsText) return
-    onMidSequencePhysicsText(t)
-    setMidSequenceDraft('')
-  }
-
-  const onMidSequenceKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return
-    if (e.shiftKey) return
-    e.preventDefault()
-    submitMidSequenceText()
-  }
-
   return (
     <div ref={wrapRef} className="gesture-wrap">
       {(modelError || sampleError || uploadErr) && (
@@ -1205,17 +1152,10 @@ export function GestureStage({
       <div
         ref={canvasHostRef}
         className={`gesture-canvas-host${!audioStarted ? ' is-bg-paused' : ''}`}
-        aria-label="手势与视频预览"
+        aria-label="互动画板"
         onPointerDown={onPreviewPointerDown}
         role="presentation"
       >
-        <video
-          ref={videoRef}
-          className="gesture-video"
-          muted
-          playsInline
-          autoPlay
-        />
         <canvas ref={canvasRef} className="gesture-canvas" />
         <BeatGestureHint
           ref={beatGestureHintRef}
@@ -1272,33 +1212,15 @@ export function GestureStage({
           <TechnoScanOverlay hint={textPhysicsJob.text} />
         ) : null}
       </div>
-      {onMidSequencePhysicsText &&
-        (sequencePhase === 'scan' || sequencePhase === 'matter') && (
-          <form
-            className="gesture-mid-sequence-form"
-            onSubmit={(e) => {
-              e.preventDefault()
-              submitMidSequenceText()
-            }}
-          >
-            <span className="gesture-mid-sequence-hint">
-              // 序列进行中 · 可继续输入
-            </span>
-            <input
-              type="text"
-              className="gesture-mid-sequence-input"
-              value={midSequenceDraft}
-              onChange={(e) => setMidSequenceDraft(e.target.value)}
-              onKeyDown={onMidSequenceKeyDown}
-              placeholder="补充或替换… Enter 发送（与下方对话区相同）"
-              maxLength={4000}
-              aria-label="扫描或落体中途输入文字"
-            />
-            <button type="submit" className="gesture-mid-sequence-send">
-              // SEND
-            </button>
-          </form>
-        )}
+      {/* 隐藏 video — 仅用于 MediaPipe 手部检测，不在画布上显示 */}
+      <video
+        ref={videoRef}
+        className="gesture-video"
+        muted
+        playsInline
+        autoPlay
+        style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+      />
     </div>
   )
 }
