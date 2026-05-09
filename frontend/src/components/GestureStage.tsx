@@ -54,7 +54,7 @@ const RING_TIP_IDX = 16
 const PINKY_TIP = 20
 /** 五指指尖拖尾：寿命与点数（每只手 5 条） */
 const TIP_GLOW_TRAIL_MAX_AGE_MS = 560
-const TIP_GLOW_TRAIL_MAX_POINTS = 34
+const _TIP_GLOW_TRAIL_MAX_POINTS = 34
 /** 拇指、食指、中指、无名指、小指 TIP 序号（与 MediaPipe 一致） */
 const FINGER_TIP_INDICES = [
   THUMB_TIP,
@@ -70,7 +70,7 @@ function emptyHandTipGlowTrails(): TipGlowPoint[][] {
   return FINGER_TIP_INDICES.map(() => [])
 }
 
-const MAX_HANDS_FOR_TIP_GLOW = 2
+const _MAX_HANDS_FOR_TIP_GLOW = 2
 /** 非击打玩法时：出拳/切手落在主拍 ±该秒内才给背景升半音 */
 const BEAT_PITCH_BUMP_WINDOW_SEC = 0.12
 
@@ -310,7 +310,7 @@ function drawHandConnections(
 }
 
 /** 五指指尖运动拖尾（淡蓝，配合白色画板） */
-function drawFingerTipGlowTrail(
+function _drawFingerTipGlowTrail(
   ctx: CanvasRenderingContext2D,
   trail: TipGlowPoint[],
   nowMs: number,
@@ -386,7 +386,7 @@ function drawHandThin(
 }
 
 /** 与 legacy-p5 sketch.js 中 drawPinchConstruct 一致 */
-function drawPinchConstruct(
+function _drawPinchConstruct(
   ctx: CanvasRenderingContext2D,
   thumb: LM,
   indexFinger: LM,
@@ -622,7 +622,7 @@ export function GestureStage({
   const canvasHostRef = useRef<HTMLDivElement>(null)
   /** 主画布逻辑像素（与 gesture-canvas-host 的 CSS 尺寸一致），避免固定 640×480 被拉宽变糊 */
   const canvasLayoutRef = useRef({ w: W, h: H })
-  const fingertipGlowTrailsRef = useRef<TipGlowPoint[][][]>([
+  const _fingertipGlowTrailsRef = useRef<TipGlowPoint[][][]>([
     emptyHandTipGlowTrails(),
     emptyHandTipGlowTrails(),
   ])

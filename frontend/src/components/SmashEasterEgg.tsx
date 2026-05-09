@@ -22,10 +22,10 @@ const HITS_PER_ITEM = 3
  * 每个元素被打 3 次后自动切换到下一个，两个元素无限循环。
  * 内嵌独立的摄像头 + MediaPipe 手势检测，不依赖外部 GestureStage。
  */
-export function SmashEasterEgg() {
+export function SmashEasterEgg({ cameraStream }: { cameraStream?: MediaStream | null }) {
   const [isHit, setIsHit] = useState(false)
   const [shaking, setShaking] = useState(false)
-  const [itemHitCount, setItemHitCount] = useState(0)   // 当前元素局部打击次数
+  const [_itemHitCount, setItemHitCount] = useState(0)   // 当前元素局部打击次数
   const [currentItemIdx, setCurrentItemIdx] = useState(0) // 当前元素索引
   const [gestureStatus, setGestureStatus] = useState<'loading' | 'ready' | 'error'>('loading')
 
@@ -82,12 +82,17 @@ export function SmashEasterEgg() {
         if (cancelled) { landmarker.close(); return }
         landmarkerRef.current = landmarker
 
-        // 2. 启动摄像头
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' },
-          audio: false,
-        })
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
+        // 2. 启动摄像头（优先使用共享流）
+        let stream: MediaStream
+        if (cameraStream) {
+          stream = cameraStream
+        } else {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' },
+            audio: false,
+          })
+          if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
+        }
         streamRef.current = stream
 
         const video = videoRef.current
@@ -128,13 +133,16 @@ export function SmashEasterEgg() {
       mountedRef.current = false
       cancelAnimationFrame(rafRef.current)
       if (switchTimerRef.current) clearTimeout(switchTimerRef.current)
-      streamRef.current?.getTracks().forEach(t => t.stop())
+      // 只停止自己创建的流，不要停止共享流
+      if (!cameraStream && streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+      }
       streamRef.current = null
       landmarkerRef.current?.close()
       landmarkerRef.current = null
       gestureDetectorRef.current.reset()
     }
-  }, [triggerHit])
+  }, [triggerHit, cameraStream])
 
   return (
     <div className="smash-stage">
