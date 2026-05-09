@@ -373,28 +373,29 @@ export default function App() {
 
       {/* 主内容区 */}
       <div className="app-main">
-        {/* 左侧：互动画布 / 彩蛋模式 + 输入栏（展开态可见） */}
+        {/* 左侧：互动画布 + 彩蛋叠加层 + 输入栏（展开态可见） */}
         <div className="app-left">
-          {easterEggVisible ? (
+          {/* GestureStage 始终挂载 — 保持音频播放 + MediaPipe 检测常驻 */}
+          <GestureStage
+            textPhysicsJob={textPhysicsJob}
+            onTextPhysicsComplete={onTextPhysicsComplete}
+            onEmotionScanComplete={onEmotionScanComplete}
+            onAudioPlaybackStarted={onAudioPlaybackStarted}
+            musicPunchGameActive={punchPhase === 'running'}
+            musicPunchHandleRef={punchHandleRef}
+            onMusicPunchSuccessfulHit={onPunchHit}
+            onBossDefeated={onBossDefeated}
+            musicPunchHud={
+              punchPhase === 'running'
+                ? { timeLeft: punchTimeLeft, score: punchScore, combo: punchCombo }
+                : null
+            }
+            musicPunchHitTick={punchHitTick}
+            cameraStream={cameraStream}
+          />
+          {/* 彩蛋模式叠加在 GestureStage 上方，不卸载底层 */}
+          {easterEggVisible && (
             <SmashEasterEgg cameraStream={cameraStream} />
-          ) : (
-            <GestureStage
-              textPhysicsJob={textPhysicsJob}
-              onTextPhysicsComplete={onTextPhysicsComplete}
-              onEmotionScanComplete={onEmotionScanComplete}
-              onAudioPlaybackStarted={onAudioPlaybackStarted}
-              musicPunchGameActive={punchPhase === 'running'}
-              musicPunchHandleRef={punchHandleRef}
-              onMusicPunchSuccessfulHit={onPunchHit}
-              onBossDefeated={onBossDefeated}
-              musicPunchHud={
-                punchPhase === 'running'
-                  ? { timeLeft: punchTimeLeft, score: punchScore, combo: punchCombo }
-                  : null
-              }
-              musicPunchHitTick={punchHitTick}
-              cameraStream={cameraStream}
-            />
           )}
           {expanded && (
             <EmotionInput

@@ -83,6 +83,7 @@
 
 /* ========== 左侧容器（画布 + 输入栏一体） ========== */
 .app-left {
+  position: relative;          /* 彩蛋叠加层的定位参考 */
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
@@ -1409,15 +1410,16 @@
 
 /* ========== 解压彩蛋画布区 ========== */
 .smash-stage {
-  flex: 1;
-  position: relative;
+  /* 叠加在 GestureStage 上方（不替换，保持底层音频 + MediaPipe 运行） */
+  position: absolute;
+  inset: 0;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   background: #ffffff;
   overflow: hidden;
-  min-height: 0;
 }
 
 .smash-stage-target {
