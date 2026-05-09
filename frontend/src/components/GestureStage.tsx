@@ -49,28 +49,6 @@ const H = 480
 const INDEX = 8
 const THUMB_TIP = 4
 const INDEX_TIP = 8
-const MIDDLE_TIP_IDX = 12
-const RING_TIP_IDX = 16
-const PINKY_TIP = 20
-/** 五指指尖拖尾：寿命与点数（每只手 5 条） */
-const TIP_GLOW_TRAIL_MAX_AGE_MS = 560
-const _TIP_GLOW_TRAIL_MAX_POINTS = 34
-/** 拇指、食指、中指、无名指、小指 TIP 序号（与 MediaPipe 一致） */
-const FINGER_TIP_INDICES = [
-  THUMB_TIP,
-  INDEX_TIP,
-  MIDDLE_TIP_IDX,
-  RING_TIP_IDX,
-  PINKY_TIP,
-] as const
-
-type TipGlowPoint = { x: number; y: number; t: number }
-
-function emptyHandTipGlowTrails(): TipGlowPoint[][] {
-  return FINGER_TIP_INDICES.map(() => [])
-}
-
-const _MAX_HANDS_FOR_TIP_GLOW = 2
 /** 非击打玩法时：出拳/切手落在主拍 ±该秒内才给背景升半音 */
 const BEAT_PITCH_BUMP_WINDOW_SEC = 0.12
 
@@ -156,9 +134,6 @@ const PAL = {
   /** 飘字碎片（淡蓝） */
   ghost: [0, 170, 200] as const,
 }
-
-/** 五指指尖拖尾 — 淡蓝 */
-const TIP_TRAIL: readonly [number, number, number] = [165, 215, 248]
 
 function nf(n: number, _w: number, dec: number) {
   if (dec <= 0) return String(Math.round(n))
@@ -309,65 +284,6 @@ function drawHandConnections(
   }
 }
 
-/** 五指指尖运动拖尾（淡蓝，配合白色画板） */
-function _drawFingerTipGlowTrail(
-  ctx: CanvasRenderingContext2D,
-  trail: TipGlowPoint[],
-  nowMs: number,
-): void {
-  if (trail.length === 0) return
-  const maxAge = TIP_GLOW_TRAIL_MAX_AGE_MS
-  const segAlpha = (t0: number, t1: number) => {
-    const a0 = Math.max(0, 1 - (nowMs - t0) / maxAge)
-    const a1 = Math.max(0, 1 - (nowMs - t1) / maxAge)
-    return Math.min(a0, a1)
-  }
-
-  ctx.save()
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-
-  if (trail.length >= 2) {
-    for (let pass = 0; pass < 2; pass++) {
-      for (let i = 1; i < trail.length; i++) {
-        const p0 = trail[i - 1]!
-        const p1 = trail[i]!
-        const sa = segAlpha(p0.t, p1.t)
-        if (sa < 0.02) continue
-        const rootWide = 1 - sa
-        const [tr, tg, tb] = TIP_TRAIL
-        if (pass === 0) {
-          ctx.strokeStyle = `rgba(${tr}, ${tg}, ${tb}, ${sa * 0.15})`
-          ctx.lineWidth = 7 + sa * 6 + rootWide * 11
-        } else {
-          ctx.strokeStyle = `rgba(${tr}, ${tg}, ${tb}, ${sa * 0.7})`
-          ctx.lineWidth = 1 + sa * 1.65 + rootWide * 2.4
-        }
-        ctx.beginPath()
-        ctx.moveTo(p0.x, p0.y)
-        ctx.lineTo(p1.x, p1.y)
-        ctx.stroke()
-      }
-    }
-  }
-
-  const head = trail[trail.length - 1]!
-  const headAge = Math.max(0, 1 - (nowMs - head.t) / maxAge)
-  const [tr, tg, tb] = TIP_TRAIL
-  if (headAge > 0.06) {
-    const g = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 14)
-    g.addColorStop(0, `rgba(${tr}, ${tg}, ${tb}, ${headAge * 0.35})`)
-    g.addColorStop(0.45, `rgba(${tr}, ${tg}, ${tb}, ${headAge * 0.08})`)
-    g.addColorStop(1, `rgba(${tr}, ${tg}, ${tb}, 0)`)
-    ctx.fillStyle = g
-    ctx.beginPath()
-    ctx.arc(head.x, head.y, 14, 0, Math.PI * 2)
-    ctx.fill()
-  }
-
-  ctx.restore()
-}
-
 function drawHandThin(
   ctx: CanvasRenderingContext2D,
   landmarks: LM[],
@@ -383,62 +299,6 @@ function drawHandThin(
     ctx.ellipse(x, y, 3.5, 3.5, 0, 0, Math.PI * 2)
     ctx.stroke()
   }
-}
-
-/** 与 legacy-p5 sketch.js 中 drawPinchConstruct 一致 */
-function _drawPinchConstruct(
-  ctx: CanvasRenderingContext2D,
-  thumb: LM,
-  indexFinger: LM,
-  w: number,
-  h: number,
-): void {
-  const tx = thumb.x * w
-  const ty = thumb.y * h
-  const ix = indexFinger.x * w
-  const iy = indexFinger.y * h
-  const cx = (tx + ix) / 2
-  const cy = (ty + iy) / 2
-  const radius = Math.hypot(tx - ix, ty - iy)
-
-  ctx.strokeStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
-  ctx.lineWidth = 0.65
-  ctx.beginPath()
-  ctx.moveTo(tx, ty)
-  ctx.lineTo(ix, iy)
-  ctx.stroke()
-
-  ctx.setLineDash([5, 6])
-  ctx.beginPath()
-  ctx.ellipse(cx, cy, radius, radius, 0, 0, Math.PI * 2)
-  ctx.stroke()
-  ctx.setLineDash([])
-
-  ctx.strokeStyle = `rgba(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]}, 0.7)`
-  ctx.lineWidth = 0.5
-  drawCircleWithX(ctx, cx, cy, 5)
-
-  ctx.fillStyle = `rgb(${PAL.ink[0]}, ${PAL.ink[1]}, ${PAL.ink[2]})`
-  ctx.beginPath()
-  ctx.ellipse(cx, cy, 2.2, 2.2, 0, 0, Math.PI * 2)
-  ctx.fill()
-}
-
-function drawCircleWithX(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  r: number,
-): void {
-  ctx.beginPath()
-  ctx.ellipse(x, y, r, r, 0, 0, Math.PI * 2)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.moveTo(x - r * 0.65, y - r * 0.65)
-  ctx.lineTo(x + r * 0.65, y + r * 0.65)
-  ctx.moveTo(x - r * 0.65, y + r * 0.65)
-  ctx.lineTo(x + r * 0.65, y - r * 0.65)
-  ctx.stroke()
 }
 
 /** 与 sketch.js drawDataHUD 布局一致 */
@@ -622,10 +482,6 @@ export function GestureStage({
   const canvasHostRef = useRef<HTMLDivElement>(null)
   /** 主画布逻辑像素（与 gesture-canvas-host 的 CSS 尺寸一致），避免固定 640×480 被拉宽变糊 */
   const canvasLayoutRef = useRef({ w: W, h: H })
-  const _fingertipGlowTrailsRef = useRef<TipGlowPoint[][][]>([
-    emptyHandTipGlowTrails(),
-    emptyHandTipGlowTrails(),
-  ])
   const rafRef = useRef<number>(0)
   const frameRef = useRef(0)
   const gestureDetectorRef = useRef(new GestureEventDetector())
