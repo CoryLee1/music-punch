@@ -4,6 +4,7 @@ import { GestureStage } from './components/GestureStage'
 import { ControlPanel } from './components/ControlPanel'
 import { EmotionInput } from './components/EmotionInput'
 import { PunchOverCanvasOverlay } from './components/PunchOverCanvasOverlay'
+import { SmashEasterEgg } from './components/SmashEasterEgg'
 import type { AppPhase } from './components/ControlPanel'
 import type { GestureHit } from './lib/handGestures'
 import type { ParticlePunchHandle } from './components/ParticlePunchOverlay'
@@ -212,6 +213,9 @@ export default function App() {
   const [punchConfettiActive, setPunchConfettiActive] = useState(false)
   const [punchConfettiKey, setPunchConfettiKey] = useState(0)
   const [textPhysicsJob, setTextPhysicsJob] = useState<TextPhysicsJob | null>(null)
+
+  /* ───── 彩蛋：解压模式 ───── */
+  const [easterEggVisible, setEasterEggVisible] = useState(false)
 
   /* ───── refs ───── */
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -440,23 +444,27 @@ export default function App() {
 
       {/* 主内容区 */}
       <div className="app-main">
-        {/* 左侧 2/3 互动区 — 新版 GestureStage */}
-        <GestureStage
-          textPhysicsJob={textPhysicsJob}
-          onTextPhysicsComplete={onTextPhysicsComplete}
-          onEmotionScanComplete={onEmotionScanComplete}
-          onAudioPlaybackStarted={onAudioPlaybackStarted}
-          musicPunchGameActive={punchPhase === 'running'}
-          musicPunchHandleRef={punchHandleRef}
-          onMusicPunchSuccessfulHit={onPunchHit}
-          onBossDefeated={onBossDefeated}
-          musicPunchHud={
-            punchPhase === 'running'
-              ? { timeLeft: punchTimeLeft, score: punchScore, combo: punchCombo }
-              : null
-          }
-          musicPunchHitTick={punchHitTick}
-        />
+        {/* 左侧 2/3 互动区 */}
+        {easterEggVisible ? (
+          <SmashEasterEgg />
+        ) : (
+          <GestureStage
+            textPhysicsJob={textPhysicsJob}
+            onTextPhysicsComplete={onTextPhysicsComplete}
+            onEmotionScanComplete={onEmotionScanComplete}
+            onAudioPlaybackStarted={onAudioPlaybackStarted}
+            musicPunchGameActive={punchPhase === 'running'}
+            musicPunchHandleRef={punchHandleRef}
+            onMusicPunchSuccessfulHit={onPunchHit}
+            onBossDefeated={onBossDefeated}
+            musicPunchHud={
+              punchPhase === 'running'
+                ? { timeLeft: punchTimeLeft, score: punchScore, combo: punchCombo }
+                : null
+            }
+            musicPunchHitTick={punchHitTick}
+          />
+        )}
 
         {/* 右侧 1/3 控制面板 */}
         <ControlPanel
@@ -482,6 +490,8 @@ export default function App() {
         phase={phase}
         onSubmit={handleEmotionSubmit}
         onReset={handleReset}
+        onEasterEgg={() => setEasterEggVisible((v) => !v)}
+        easterEggActive={easterEggVisible}
       />
     </div>
   )

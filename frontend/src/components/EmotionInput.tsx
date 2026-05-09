@@ -7,22 +7,31 @@ interface EmotionInputProps {
   phase?: AppPhase
   onSubmit: (emotion: string) => void
   onReset?: () => void
+  onEasterEgg?: () => void
+  easterEggActive?: boolean
 }
 
-export function EmotionInput({ disabled, phase, onSubmit, onReset }: EmotionInputProps) {
+export function EmotionInput({ disabled, phase, onSubmit, onReset, onEasterEgg, easterEggActive }: EmotionInputProps) {
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 光标常驻：始终保持输入框聚焦
+  // 光标常驻：始终保持输入框聚焦（延迟 refocus 以免吞掉按钮点击）
   useEffect(() => {
     const el = inputRef.current
     if (!el) return
     el.focus()
+    let tid: ReturnType<typeof setTimeout> | null = null
     const refocus = () => {
-      if (!el.disabled) el.focus()
+      if (tid) clearTimeout(tid)
+      tid = setTimeout(() => {
+        if (!el.disabled) el.focus()
+      }, 80)
     }
     el.addEventListener('blur', refocus)
-    return () => el.removeEventListener('blur', refocus)
+    return () => {
+      el.removeEventListener('blur', refocus)
+      if (tid) clearTimeout(tid)
+    }
   }, [])
 
   // disabled 状态变化时也重新聚焦
@@ -47,6 +56,17 @@ export function EmotionInput({ disabled, phase, onSubmit, onReset }: EmotionInpu
 
   return (
     <div className="app-input-bar">
+      {/* 彩蛋按钮 */}
+      {onEasterEgg && (
+        <button
+          className={`input-easter-egg ${easterEggActive ? 'is-active' : ''}`}
+          onClick={onEasterEgg}
+          type="button"
+          title={easterEggActive ? '退出解压模式' : '解压模式'}
+        >
+          📦
+        </button>
+      )}
       <span className="input-prefix">{'//>'}</span>
       <input
         ref={inputRef}
