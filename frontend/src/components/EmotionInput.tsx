@@ -105,7 +105,7 @@ export function EmotionInput({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入你的烦恼，准备出击..."
+          placeholder="输入情绪，准备出击"
           disabled={disabled}
           maxLength={200}
           autoComplete="off"
