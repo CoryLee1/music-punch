@@ -587,6 +587,9 @@
 
 /* ========== gesture-bundle (from integration kit) ========== */
 .gesture-wrap {
+  position: relative;
+  left: 0;
+  top: 0;
   flex: 2;
   display: flex;
   flex-direction: column;
