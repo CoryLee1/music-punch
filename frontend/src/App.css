@@ -1524,19 +1524,34 @@
 
 
 /* ═══════════════════════════════════════════════
-   SPLASH SCREEN · 开屏过渡
+   SPLASH SCREEN · 开屏覆盖层 + 自然过渡
    ═══════════════════════════════════════════════ */
 
-/* 根容器 — 全屏白色背景 */
-.splash-root {
+/*
+ * 架构：splash 是固定覆盖层，叠在主 UI 上面。
+ * 爆炸粒子落地后 → splash 层淡隐（opacity + 背景色渐变到透明）
+ *                → 主 UI 内容同步做微妙入场动画。
+ * 全程同一棵 DOM 树，没有挂载/卸载跳变。
+ */
+
+/* ── Splash 覆盖层 ── */
+.splash-overlay {
   position: fixed;
   inset: 0;
   z-index: 9000;
   background: #ffffff;
-  overflow: hidden;
+  pointer-events: auto;
+  transition: opacity 0.28s ease-out,
+              background-color 0.22s ease-out;
 }
 
-/* Splash 画布全屏 */
+.splash-overlay.is-exiting {
+  opacity: 0;
+  background-color: transparent;
+  pointer-events: none;
+}
+
+/* Splash 内部画布 */
 .splash-screen {
   position: absolute;
   inset: 0;
@@ -1590,38 +1605,30 @@
   transform: scale(0.96);
 }
 
-/* ── 退出动画：splash 内容淡出并上移 ── */
-.splash-root.splash-exiting .splash-screen {
-  animation: splash-fade-up 0.85s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
+/* ── 主 UI 入场动画 ── */
 
-@keyframes splash-fade-up {
-  0%   { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(-60px); }
-}
-
-/* ── 主 UI 在 splash 退出时的 reveal 容器 ── */
-.app-reveal {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  background: transparent;
-  overflow: hidden;
-  /* 初始：从上方藏起 */
-  transform: translateY(-100%);
+/* splash 可见时：主 UI 内容隐藏（但 DOM 已挂载） */
+.app.has-splash .typo-header,
+.app.has-splash .app-main {
   opacity: 0;
 }
 
-/* 激活：从上往下滑入 */
-.app-reveal.app-reveal-active {
-  animation: app-slide-down 0.85s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+/* splash 正在退出时：主 UI 内容快速入场 */
+.app.splash-revealing .typo-header {
+  animation: content-fade-in 0.22s ease-out both;
 }
 
-@keyframes app-slide-down {
-  0%   { transform: translateY(-100%); opacity: 0; }
-  20%  { opacity: 1; }
-  100% { transform: translateY(0); opacity: 1; }
+.app.splash-revealing .app-main {
+  animation: content-slide-up 0.26s ease-out 0.04s both;
+}
+
+@keyframes content-fade-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes content-slide-up {
+  from { opacity: 0; transform: translateY(30px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 

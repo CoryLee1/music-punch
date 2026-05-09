@@ -103,17 +103,11 @@ function TypoHeader() {
 
 export default function App() {
   /* ───── Splash 开屏状态 ───── */
-  const [showSplash, setShowSplash] = useState(true)
-  const [splashExiting, setSplashExiting] = useState(false)
+  const [splashPhase, setSplashPhase] = useState<'visible' | 'exiting' | 'done'>('visible')
 
   const handleSplashComplete = useCallback(() => {
-    // 爆炸粒子落地后：先开始退出动画
-    setSplashExiting(true)
-    // 等退出动画完成后再真正移除 splash、显示主 UI
-    setTimeout(() => {
-      setShowSplash(false)
-      setSplashExiting(false)
-    }, 900) // 与 CSS 过渡时长匹配
+    setSplashPhase('exiting')
+    setTimeout(() => setSplashPhase('done'), 320)
   }, [])
 
   /* ───── 原有 UI 状态 ───── */
@@ -369,57 +363,18 @@ export default function App() {
 
   const inputDisabled = phase !== 'idle' && phase !== 'over'
 
-  /* ───── Splash 开屏阶段 ───── */
-  if (showSplash) {
-    return (
-      <div className={`splash-root ${splashExiting ? 'splash-exiting' : ''}`}>
-        <SplashScreen onComplete={handleSplashComplete} />
-        {/* 主 UI 在 splash 退出动画期间提前渲染（在背后），实现无缝过渡 */}
-        {splashExiting && (
-          <div className={`app-reveal ${expanded ? 'is-expanded' : 'is-collapsed'} app-reveal-active`}>
-            <TypoHeader />
-            <div className="app-main">
-              <div className="app-left" />
-              <div className="app-center-col">
-                <ControlPanel
-                  phase={phase}
-                  emotion={emotion}
-                  elapsed={elapsed}
-                  isPaused={isPaused}
-                  onTogglePause={handleTogglePause}
-                  onStop={handleStop}
-                  onReset={handleReset}
-                  apiState={apiState}
-                  gestureBanner={gestureBanner}
-                  clipLabel={clipLabel}
-                  audioStarted={audioStarted}
-                  videoRef={videoRef}
-                  cameraReady={cameraReady}
-                />
-                {!expanded && (
-                  <div className="app-collapsed-input">
-                    <EmotionInput
-                      disabled={false}
-                      phase={phase}
-                      onSubmit={handleEmotionSubmit}
-                      onReset={handleReset}
-                      onToggleExpand={handleToggleExpand}
-                      isExpanded={expanded}
-                      onEasterEgg={() => setEasterEggVisible((v) => !v)}
-                      easterEggActive={easterEggVisible}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
+  const splashVisible = splashPhase !== 'done'
+  const splashExiting = splashPhase === 'exiting'
 
   return (
-    <div className={`app ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
+    <div className={`app ${expanded ? 'is-expanded' : 'is-collapsed'} ${splashVisible ? 'has-splash' : ''} ${splashExiting ? 'splash-revealing' : ''}`}>
+      {/* ── Splash 覆盖层 — 叠在主 UI 上方 ── */}
+      {splashVisible && (
+        <div className={`splash-overlay ${splashExiting ? 'is-exiting' : ''}`}>
+          <SplashScreen onComplete={handleSplashComplete} exiting={splashExiting} />
+        </div>
+      )}
+
       {/* 装饰性排版头部 */}
       <TypoHeader />
 

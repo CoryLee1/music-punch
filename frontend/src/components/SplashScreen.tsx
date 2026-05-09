@@ -2,20 +2,26 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 
 /**
  * 开屏动画 — 移植自 public/begin.html
- * 旋转的 POP PUNCH 球体 + PUNCH 按钮，点击后爆炸，爆炸粒子落地静止后回调 onComplete。
+ * 旋转的 POP PUNCH 球体 + PUNCH 按钮，点击后爆炸。
+ *
+ * 架构：splash 作为覆盖层叠在主 UI 上方。
+ * 爆炸粒子落地后，通过 onComplete 通知父级开始淡隐。
+ * 淡隐过程中画布继续绘制（粒子逐渐变透明），营造连贯过渡。
  */
 type Props = {
-  /** 爆炸粒子全部落地后触发 */
+  /** 爆炸粒子全部落地后触发 — 父级开始执行退出过渡 */
   onComplete: () => void
+  /** 是否处于退出淡隐阶段 — 为 true 时画布粒子也逐渐淡出 */
+  exiting?: boolean
 }
 
 const DISPLAY_FONT = "'Space Mono','Courier New',monospace"
 const CONST_VEL_X = 0.0006
 const CONST_VEL_Y = 0.0012
-const GRAVITY_EX = 0.5
+const GRAVITY_EX = 1.2
 const SPHERE_COLOR = '#5bcde8'
 
-export function SplashScreen({ onComplete }: Props) {
+export function SplashScreen({ onComplete, exiting }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -23,6 +29,9 @@ export function SplashScreen({ onComplete }: Props) {
 
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
+
+  const exitingRef = useRef(exiting)
+  exitingRef.current = exiting
 
   /** 主逻辑全部在 effect 中，用 vanilla canvas 驱动 */
   useEffect(() => {
@@ -48,6 +57,7 @@ export function SplashScreen({ onComplete }: Props) {
 
     // explosion
     let exploded = false
+    let completeFired = false
     type ExParticle = {
       x: number; y: number; vx: number; vy: number
       isChar: boolean; ch: string
@@ -111,7 +121,6 @@ export function SplashScreen({ onComplete }: Props) {
       const particleSize = 3
       const groupOffsetY = -5 * particleSize
 
-      // use ctx from outer scope to measure
       const popSize = fitText('POP', S * 0.44, Math.floor(S * 0.25))
       o.font = `700 ${popSize}px ${DISPLAY_FONT}`
 
@@ -218,6 +227,57 @@ export function SplashScreen({ onComplete }: Props) {
       return { x, y: y1, z: z2 }
     }
 
+    /* ── 顶部装饰排版文字（与主界面一致，但颜色极浅） ── */
+    const HEADER_FONT = "'Space Mono','Courier New',monospace"
+    const ROW1_ITEMS = ['MUSIC PUNCH', 'GESTURAL INTERFACE', 'INTERACTIVE', '700 × 1000 MM', 'INTRODUCTION TYPOGRAPHY', 'MULTIMODAL ENGINE', 'IT/FY/04']
+    const ROW2_ITEMS = ['CHARMING LIGATURE', 'AUDIO-VISUAL']
+    const ROW3_TEXT = 'IN THE INTRODUCTION COURSE AT THE DEPARTMENT TYPOGRAFIE&SCHRIFTGESTALTUNG, FIRST-YEAR STUDENTS EXPLORE WHAT BALANCE MEANS WHEN TYPE STOPS BEING JUST TEXT. THEY BUILD THEIR OWN GRIDS, CRAFT ZINES THAT FLIRT WITH ORDER AND CHAOS, AND DESIGN FULL CHARACTER SETS PLUS TINY LIGATURES.'
+
+    function drawTypoHeader() {
+      const pad = 16
+      let yOff = 12
+
+      // Row 1 — space-between
+      ctx!.font = `700 10px ${HEADER_FONT}`
+      ctx!.textBaseline = 'top'
+      ctx!.fillStyle = 'rgba(0, 0, 0, 0.08)'
+      const totalGap = W - pad * 2
+      // measure all items to distribute space
+      const widths = ROW1_ITEMS.map(t => ctx!.measureText(t).width)
+      const totalTextW = widths.reduce((a, b) => a + b, 0)
+      const gap = ROW1_ITEMS.length > 1 ? (totalGap - totalTextW) / (ROW1_ITEMS.length - 1) : 0
+      let xPos = pad
+      for (let i = 0; i < ROW1_ITEMS.length; i++) {
+        ctx!.fillText(ROW1_ITEMS[i], xPos, yOff)
+        xPos += widths[i] + gap
+      }
+      yOff += 14
+
+      // Row 2 — centered with gap
+      ctx!.font = `600 9px ${HEADER_FONT}`
+      ctx!.fillStyle = 'rgba(0, 0, 0, 0.06)'
+      ctx!.textAlign = 'center'
+      const r2Total = ROW2_ITEMS.reduce((a, t) => a + ctx!.measureText(t).width, 0) + 40
+      let r2x = (W - r2Total) / 2
+      ctx!.textAlign = 'left'
+      for (let i = 0; i < ROW2_ITEMS.length; i++) {
+        ctx!.fillText(ROW2_ITEMS[i], r2x, yOff)
+        r2x += ctx!.measureText(ROW2_ITEMS[i]).width + 40
+      }
+      yOff += 14
+
+      // Row 3 — paragraph
+      ctx!.font = `400 8px ${HEADER_FONT}`
+      ctx!.fillStyle = 'rgba(0, 0, 0, 0.05)'
+      ctx!.textAlign = 'left'
+      // simple wrap: just draw, canvas doesn't auto-wrap, so we draw in one line clipped
+      ctx!.fillText(ROW3_TEXT, pad, yOff)
+
+      // reset
+      ctx!.textAlign = 'left'
+      ctx!.textBaseline = 'top'
+    }
+
     const GRAVITY_FLOW = 0.018
     const FLOW_DAMP = 0.88
 
@@ -255,7 +315,7 @@ export function SplashScreen({ onComplete }: Props) {
         if (d.flashTimer > 0) {
           d.flashTimer--
           ctx!.globalAlpha = 0.92
-          ctx!.font = `900 13px ${DISPLAY_FONT}`
+          ctx!.font = `700 13px ${DISPLAY_FONT}`
           ctx!.fillText(d.label, cx + x * R, cy + y * R)
         } else if (edgeness > 0.72) {
           ctx!.globalAlpha = 0.3 + edgeness * 0.6
@@ -304,53 +364,53 @@ export function SplashScreen({ onComplete }: Props) {
         const { x, y, z } = project(d.theta, d.phi, sRotX, sRotY)
         if (z < 0) continue
         explodeParticles.push({
-          x: cx + x * R, y: cy + y * R, vx: 0, vy: 0,
-          isChar: false, ch: d.label,
-          floorY: H - 4, restitution: 0.28 + Math.random() * 0.42,
-          friction: 0.6 + Math.random() * 0.25,
-          settled: false, delay: 0,
-        })
+            x: cx + x * R, y: cy + y * R, vx: 0, vy: 0,
+            isChar: false, ch: d.label,
+            floorY: H - 4, restitution: 0.10 + Math.random() * 0.15,
+            friction: 0.82 + Math.random() * 0.15,
+            settled: false, delay: 0,
+          })
       }
       for (const p of textParticles) {
         const rt = p.cTheta + (sRotY - Math.PI)
         const { x, y, z } = project(rt, p.cPhi, 0, 0)
         if (z < -0.05) continue
         explodeParticles.push({
-          x: cx + x * R, y: cy + y * R, vx: 0, vy: 0,
-          isChar: true, ch: CHARS[Math.floor(Math.random() * CHARS.length)],
-          floorY: H - 4, restitution: 0.28 + Math.random() * 0.42,
-          friction: 0.58 + Math.random() * 0.28,
-          settled: false, delay: 0,
-        })
+            x: cx + x * R, y: cy + y * R, vx: 0, vy: 0,
+            isChar: true, ch: CHARS[Math.floor(Math.random() * CHARS.length)],
+            floorY: H - 4, restitution: 0.10 + Math.random() * 0.15,
+            friction: 0.82 + Math.random() * 0.15,
+            settled: false, delay: 0,
+          })
       }
       for (const p of explodeParticles) {
         const dx = p.x - cx, dy = p.y - cy
         const dist = Math.sqrt(dx * dx + dy * dy) || 1
-        const force = (500 + Math.random() * 700) / dist
+        const force = (400 + Math.random() * 500) / dist
         const angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 1.0
-        p.vx = Math.cos(angle) * force * (0.3 + Math.random() * 0.8)
-        p.vy = Math.sin(angle) * force * (0.2 + Math.random() * 0.7) - Math.random() * 3
-        p.delay = Math.floor((dist / 400) * 10 + Math.random() * 8)
+        p.vx = Math.cos(angle) * force * (0.3 + Math.random() * 0.6)
+        p.vy = Math.sin(angle) * force * (0.2 + Math.random() * 0.5) - Math.random() * 2
+        p.delay = Math.floor((dist / 400) * 6 + Math.random() * 4)
       }
     }
 
     function drawExplosion() {
       let anyMoving = false
-      ctx!.font = `900 8px ${DISPLAY_FONT}`
+      ctx!.font = `700 8px ${DISPLAY_FONT}`
       ctx!.textBaseline = 'middle'; ctx!.textAlign = 'center'
       for (const p of explodeParticles) {
         if (p.delay > 0) { p.delay--; anyMoving = true; continue }
         if (!p.settled) {
           p.vy += GRAVITY_EX
-          p.vx *= 0.991 + Math.random() * 0.003
-          p.x += p.vx + (Math.random() - 0.5) * 0.12
+          p.vx *= 0.97 + Math.random() * 0.01
+          p.x += p.vx + (Math.random() - 0.5) * 0.08
           p.y += p.vy
           if (p.y >= p.floorY) {
             p.y = p.floorY
             p.vy = -Math.abs(p.vy) * p.restitution
             p.vx *= p.friction
-            if (Math.abs(p.vy) < 0.8) p.vy *= 0.5
-            if (Math.abs(p.vy) < 0.15 && Math.abs(p.vx) < 0.15) {
+            if (Math.abs(p.vy) < 1.5) p.vy *= 0.3
+            if (Math.abs(p.vy) < 0.5 && Math.abs(p.vx) < 0.5) {
               p.settled = true; p.vx = 0; p.vy = 0
             }
           }
@@ -364,19 +424,23 @@ export function SplashScreen({ onComplete }: Props) {
         else { ctx!.beginPath(); ctx!.arc(p.x, p.y, 1.5, 0, Math.PI * 2); ctx!.fill() }
       }
       ctx!.globalAlpha = 1; ctx!.textAlign = 'left'; ctx!.textBaseline = 'top'
-      if (!anyMoving && alive) {
-        // 粒子全部落地后等 800ms 再回调
-        setTimeout(() => {
-          if (alive) onCompleteRef.current()
-        }, 800)
+      if (!anyMoving && !completeFired && alive) {
+        completeFired = true
+        // 粒子落地后立刻切换
+        onCompleteRef.current()
       }
     }
 
     function draw() {
       if (!alive) return
       ctx!.clearRect(0, 0, W, H)
-      ctx!.fillStyle = '#ffffff'
-      ctx!.fillRect(0, 0, W, H)
+      // 退出阶段不再绘制白色背景 — 让 CSS opacity 过渡直接透出底层
+      if (!exitingRef.current) {
+        ctx!.fillStyle = '#ffffff'
+        ctx!.fillRect(0, 0, W, H)
+      }
+      // 装饰排版文字始终绘制（退出阶段也画，跟随淡出）
+      drawTypoHeader()
       if (exploded) drawExplosion()
       else drawSphere()
       requestAnimationFrame(draw)
